@@ -1,8 +1,8 @@
 """
-uranos.py Lib for URANOS processing
+CoRNy URANOS
     Functions specific for data processing of URANOS data
-    Historically based on CoRNy <https://git.ufz.de/CRNS/cornish_pasdy/-/blob/master/corny/uranos.py>
-    version: 1.0
+    based on: https://git.ufz.de/CRNS/cornish_pasdy/-/blob/master/corny/uranos.py
+    version: 1.01
 """
 
 import numpy as np
@@ -12,8 +12,9 @@ import pandas
 from glob import glob
 import matplotlib.pyplot as plt
 
-import warnings
-warnings.filterwarnings('ignore')
+#from .corn import get_footprint, Wr, Wr_approx, sm2N_Koehli, sm2N, N2SM_Schmidt_single
+#from corny.grains.Schroen2017hess import get_footprint, Wr, Wr_approx
+#from .Koehli2021fiw import sm2N_Koehli, sm2N, N2SM_Schmidt_single
 
 class URANOS:
     """
@@ -69,11 +70,7 @@ class URANOS:
                  hum=5, press=1013, verbose=False):
         """
         Initialization
-        """
-        from os.path import exists
-        if (folder is not None) and (not exists(folder)):  #
-            print("Error: Couldn't find {}.".format(folder))
-
+        """    
         self.verbose = verbose
         self.folder = folder
         self.scaling = scaling # one pixel in the data is x meters in reality
@@ -82,93 +79,12 @@ class URANOS:
         self.hum = hum
         self.press = press
         # Initial approximation with sm=20%, will be updated by materials2sm
-        #self.footprint_radius = get_footprint(0.2, self.hum, self.press)
-
-
+        self.footprint_radius = np.nan #get_footprint(0.2, self.hum, self.press)
     
     #######
     # Input
     #######
-    def read_inputmatrix(self, layer=None, filename=None, target=None, scaling=None):
-        """
-           Read input matrices ("material", "porosity", "density") from png or dat and
-           add them as attributes
-           extends/replaces read_materials()
-        """
-
-        #import numpy as np
-        #layer = str(11)
-        #target = "material"
-
-        if ((layer is None) and (filename is None)) or ((layer is not None) and (filename is not None)):
-            print("Error: 'layer' OR 'filename' must be specified.")
-            return (self)
-
-        if ((target is None and filename is None) or (target is not None and filename is not None)):
-            print("Error: 'target' OR 'filename' must be specified.")
-            return (self)
-
-        all_targets = np.array(["material", "porosity", "density"])
-        if target is None:
-            target = all_targets
-        if (len(np.setdiff1d(target, all_targets)) > 0):
-            print("Error: 'target' must be one of {}.".format(all_targets))
-            return (self)
-
-        pathname = self.folder
-
-        #pathname = "../../../../hexland_tracks/toponcdf/2_dat/"
-
-        if filename is None: #get filename by searching for respective names
-            layer = str(layer) #convert int to str
-            suffix = target[0]
-            if (suffix == "m"):
-                suffix="" #"material" does not use a suffix in the filenames
-            import glob
-            filename = glob.glob(layer+suffix+".png", root_dir=pathname)
-            if len(filename) == 0:  # search for "dat"
-                filename = glob.glob(layer + suffix + ".dat", root_dir=pathname)
-            if len(filename) == 0:  # nothing found
-                print("Error: Couldn't find any match for {}.".format(pathname+layer+suffix))
-                return (self)
-            filename = filename[0]
-        else:
-            from os.path import exists
-            if not exists(pathname + filename):  #
-                print("Error: Couldn't find {}.".format(pathname+filename))
-                return (self)
-            if "d." in filename:
-                target="density"
-            if "p." in filename:
-                target = "porosity"
-            else:
-                target = "material"
-
-        if "png" in filename: #import png
-            I = Image.open(pathname + filename)
-            I = self.convert_rgb2grey(I)
-            A = np.array(I)
-        else: #import "dat"
-            A = np.loadtxt(pathname + filename, dtype="int")
-
-        setattr(self, target, A)  #save imported matrix as attribute
-        #self.Materials = A
-        self._idim = A.shape
-        self.center = ((self._idim[0] - 1) / 2, (self._idim[1] - 1) / 2)
-        if not scaling is None:
-            self.scaling = scaling
-        print('Imported map <%s> (%d x %d), center at (%.1f, %.1f).'
-              % (target, self._idim[0], self._idim[1], self.center[0], self.center[1]))
-        print('  One pixel in the data equals %d meters in reality (%d x %d)'
-              % (self.scaling, self._idim[0] * self.scaling, self._idim[1] * self.scaling))
-        if (target=="material"):
-            self.Materials = self.material #comply to naming convention in the rest of the module
-            print('  Material codes: %s' % (', '.join(str(x) for x in np.unique(self.Materials))))
-            if self.default_material is None:
-                self.default_material = self.Materials[0, 0]
-                print('  Guessing default material: %d' % self.default_material)
-        return(self)
-
+    
     def read_materials(self, filename, scaling=None):
         """
         Read Material PNG image
@@ -205,7 +121,7 @@ class URANOS:
                 U = u
         #U = np.loadtxt(self.folder+filename)
         if U is None:
-            print('Error: no files found!')
+            print('Error: no origin files found!')
             return(self)
         U = np.flipud(U)
         if pad:
@@ -240,17 +156,109 @@ class URANOS:
         if pad:
             U = np.pad(U, ((0,1),(0,1)))
         self.Density = U
-        for i in self.region_data.index:
-            self.region_data.loc[i, 'Density'] = np.mean(U[self.Regions==i])
-        self.region_data['Density'] /= self.region_data['Density'].max()
+
+        if hasattr(self, 'region_data'):
+            for i in self.region_data.index:
+                self.region_data.loc[i, 'Density'] = np.mean(U[self.Regions==i])
+            self.region_data['Density'] /= self.region_data['Density'].max()
 
         print('Imported URANOS density map as `.Density` (%d x %d).' % (U.shape[0], U.shape[1]))
         return(self)
 
+    def read_root(self, filepattern, show_vars=True):
+        """
+        Read URANOS root files
+        """
+        import uproot
+        
+        list_of_root_files = []
+        for filename in glob(self.folder + filepattern):
+            print('  Reading %s' % filename)
+            rootfile = uproot.open(filename)
+            if show_vars:
+                print('Variables:', rootfile.keys())
+            list_of_root_files.append(rootfile)
+
+        if len(list_of_root_files)>1:
+            self.Root = list_of_root_files
+        elif len(list_of_root_files)==1:
+            self.Root = list_of_root_files[0]
+        else:
+            print('Error: no root files found!')
+            return(self)
+
+        print('Imported URANOS root file as `.Root`. Consider reading vars with `read_root_var(var=...)`.')
+        return(self)
+
+
+    def read_root_var(self, var='detectorDistanceDepth2;1', alias=None, drop_zeros=True):
+        """
+        Convert a Root histogramm into a pandas DataFrame of coordinates
+        Performance thanks to: Divakar <https://stackoverflow.com/a/41219731/2575273>
+        """
+        data = self.Root[var].to_numpy(flow=True)
+        # convert histogramm to data frame
+        m,n = data[0].shape
+        R,C = np.mgrid[:m,:n]
+        matrix = np.column_stack((C.ravel(),R.ravel(), data[0].ravel()))
+        
+        df = pandas.DataFrame(matrix, columns=['x','y','z'])
+        df['x'] = df['x']*np.median(np.diff(data[2]))
+        df['y'] = df['y']*np.median(np.diff(data[1]))
+        
+        if drop_zeros:
+            df = df[df.z>0]
+
+        if alias is None:
+            alias = var
+
+        if not hasattr(self, 'RootVar'):
+            self.RootVar = dict()
+        self.RootVar[alias] = df
+        
+        print('Imported URANOS root variable as `.RootVar[%s]` (%d points).' % (alias, len(df)))
+        return(self)
+        
     ############
     # Processing
     ############
+
+    def D86_from_root(self, var='detectorDistanceDepth2;1', max_radius=25):
+        """
+        Calculate penetration depth D86 from root file
+        """
+        if not hasattr(self, 'RootVar') or not var in self.RootVar:
+            self.read_root_var(var=var)
+
+        df = self.RootVar[var]
+        df = df[df.y < max_radius*1000]
+        df = df.sort_values(['x'])
+        df['z_cum'] = df.z.cumsum()
+        
+        D86 = df.loc[df.z_cum < 0.865*df.z_cum.max(),'x'].max()/1000
+        return(D86)
+
+
+
     
+    def estimate_footprint(self, soil_moisture):
+        """
+        Analytical estimation of the footprint radius
+        based on Köhli et al. (2015).
+        For the exact determination of the radius for 
+        this individual scenario, a reading of the root files
+        is to be implemented similar to D86.
+        """
+        try:
+            from corny.grains.Schroen2017hess import get_footprint
+            self.footprint_radius = get_footprint(soil_moisture, self.hum, self.press)
+        except:
+            print('! Unable to import corny.grains.Schroen2017hess')
+            self.footprint_radius = np.nan
+        
+        print('Footprint radius estimation: %.0f m.' % self.footprint_radius)
+        return(self)
+
     def material2sm(self, SM_gui=0.2):
         """
         Convert to soil moisture, assuming greyscale number between 2 and 139
@@ -265,11 +273,12 @@ class URANOS:
         print('Generated soil moisture map `.SM`, values: %s' % (', '.join(str(x) for x in np.unique(self.SM))))
         
         nearby_avg_sm = self.SM[self.m2grd(-25):self.m2grd(25), self.m2grd(-25):self.m2grd(25)]
-        #self.footprint_radius = get_footprint(nearby_avg_sm.mean(), self.hum, self.press)
         self.nearby_avg_sm = nearby_avg_sm
         print('Nearby avg. sm is %.2f +/- %.2f.' % (nearby_avg_sm.mean(), nearby_avg_sm.std()))
+        self.estimate_footprint(nearby_avg_sm.mean())
+        
         return(self)
-    
+
     def generate_distance(self):
         """
         Distance matrix
@@ -288,6 +297,12 @@ class URANOS:
         Generate radial weights based on W_r
         """
         
+        try:
+            from corny.grains.Schroen2017hess import Wr, Wr_approx
+        except:
+            print('! Unable to import corny.grains.Schroen2017hess')
+            return(self)
+
         W = np.zeros(shape=(self._idim[0],self._idim[1]))
         for i in range(self._idim[0]):
             for j in range(self._idim[1]):
@@ -355,6 +370,13 @@ class URANOS:
         Estimate neutrons from the input soil moisture map
         """
         
+        if method in ['Desilets.2010', 'Koehli.2021']:
+            try:
+                from .Koehli2021fiw import sm2N_Koehli, sm2N
+            except:
+                print('! Unable to import corny.grains.Koehli2021fiw')
+                method = None
+
         N = np.zeros(shape=(self._idim[0],self._idim[0]))
         for i in range(self._idim[0]):
             for j in range(self._idim[1]):
@@ -362,6 +384,8 @@ class URANOS:
                     N[i,j] = sm2N(self.SM[i,j], N0, off=0.0, bd=bd)
                 elif method=='Koehli.2021':
                     N[i,j] = sm2N_Koehli(self.SM[i,j], h=self.hum, off=0.0, bd=bd, func='vers2', method='Mar21_uranos_drf', bio=0)*N0/0.77
+                else:
+                    N[i,j] = np.nan
         
         self.Neutrons = N
         print('Estimated neutrons from soil moisture, `.Neutrons` (%.0f +/- %.0f)' % (N.mean(), N.std()))
@@ -451,7 +475,7 @@ class URANOS:
         """
         
         # If no regions are provided, show all regions
-        if regions is None:
+        if regions is None and hasattr(self, 'region_data'):
             regions = np.arange(len(self.region_data))
         
         if annotate is None:
@@ -494,33 +518,34 @@ class URANOS:
             #mycbar.ax.set_yticklabels(['{0:.0f}'.format(y) for y in mycbar.get_ticks()])
 
         lox, loy = label_offset
-        for i in regions:
-            mask = (self.Regions == i)
-            dataset = self.region_data.loc[i]
-            
-            cmx, cmy = dataset['center_mass']
-            coords = (cmx+lox*i, cmy+loy*i)
-            
-            # all this clutter only for having 2 digits for origins < 1...
-            fmt = self.variable_formats[annotate] if annotate in self.variable_formats else '%s'
-            
-            if annotate in ['Origins','Origins_err','Origins_both']:
-                if dataset['Origins'] < 0.01:
-                    fmt     = self.variable_formats['Origins_below1']
-                    fmt_err = self.variable_formats['Origins_below1']
-                else:
-                    fmt     = self.variable_formats['Origins']
-                    fmt_err = self.variable_formats['Origins_err']
-            elif annotate == 'Contributions':
-                if dataset['Contributions'] < 0.01:
-                    fmt = self.variable_formats['Origins_below1']
+        if regions:
+            for i in regions:
+                mask = (self.Regions == i)
+                dataset = self.region_data.loc[i]
                 
-            if annotate=='Origins_both':
-                ax.annotate('{0:{1}}\n$\pm${2:{3}}'.format(dataset['Origins'], fmt, dataset['Origins_err'], fmt_err),
-                    coords, fontsize=fontsize, ha='center', va='center')
-            elif annotate in dataset:
-                ax.annotate('{0:{1}}'.format(dataset[annotate], fmt),
-                    coords, fontsize=fontsize, ha='center', va='center')
+                cmx, cmy = dataset['center_mass']
+                coords = (cmx+lox*i, cmy+loy*i)
+                
+                # all this clutter only for having 2 digits for origins < 1...
+                fmt = self.variable_formats[annotate] if annotate in self.variable_formats else '%s'
+                
+                if annotate in ['Origins','Origins_err','Origins_both']:
+                    if dataset['Origins'] < 0.01:
+                        fmt     = self.variable_formats['Origins_below1']
+                        fmt_err = self.variable_formats['Origins_below1']
+                    else:
+                        fmt     = self.variable_formats['Origins']
+                        fmt_err = self.variable_formats['Origins_err']
+                elif annotate == 'Contributions':
+                    if dataset['Contributions'] < 0.01:
+                        fmt = self.variable_formats['Origins_below1']
+                    
+                if annotate=='Origins_both':
+                    ax.annotate('{0:{1}}\n$\pm${2:{3}}'.format(dataset['Origins'], fmt, dataset['Origins_err'], fmt_err),
+                        coords, fontsize=fontsize, ha='center', va='center')
+                else:
+                    ax.annotate('{0:{1}}'.format(dataset[annotate], fmt),
+                        coords, fontsize=fontsize, ha='center', va='center')
 
         #plt.title(r'$\theta_1=5\,\%$, $\theta_2=10\,\%$, $R=200\,$m')
         # Tick format in meters
@@ -563,9 +588,13 @@ class URANOS:
             ax.scatter(x,y, c=Var, s=24, cmap='autumn', alpha=0.3, marker='x')
         
         # Footprint circle
-        #fpc = plt.Circle((self.m2grd(0), self.m2grd(0)), self.footprint_radius/self.scaling, fc='none', ec='black', ls='--', alpha=0.3)
-        #ax.add_patch(fpc)
-        
+        if self.footprint_radius:
+            fpc = plt.Circle((self.m2grd(0), self.m2grd(0)),
+                             self.footprint_radius/self.scaling,
+                             fc='none', ec='black',
+                             ls='--', alpha=0.3)
+            ax.add_patch(fpc)
+
         if axis_labels:
             ax.set_xlabel('x (in m)')
             ax.set_ylabel('y (in m)')
@@ -628,8 +657,16 @@ class URANOS:
               .format(self.SM.mean()))
         print('{0:.1%} SM-weighted field mean (lazy approach)'
               .format((self.Weights*self.SM).sum()))
+        
+        try:
+            from .Koehli2021fiw import N2SM_Schmidt_single
+            sm_weighted_schmidt = N2SM_Schmidt_single((self.Weights*self.Neutrons).sum()/N0*0.77, bd=1.43, hum=self.hum)
+        except:
+            print('! Unable to import corny.grains.Koehli2021fiw')
+            sm_weighted_schmidt = np.nan
+
         print('{0:.1%}  N-weighted field mean (correct approach)'
-              .format(N2SM_Schmidt_single((self.Weights*self.Neutrons).sum()/N0*0.77, bd=1.43, hum=self.hum)))
+              .format(sm_weighted_schmidt))
 
 
     ########
