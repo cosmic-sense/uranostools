@@ -84,7 +84,87 @@ class URANOS:
     #######
     # Input
     #######
-    
+    def read_inputmatrix(self, layer=None, filename=None, target=None, scaling=None):
+        """
+           Read input matrices ("material", "porosity", "density") from png or dat and
+           add them as attributes
+           extends/replaces read_materials()
+        """
+
+        #import numpy as np
+        #layer = str(11)
+        #target = "material"
+
+        if ((layer is None) and (filename is None)) or ((layer is not None) and (filename is not None)):
+            print("Error: 'layer' OR 'filename' must be specified.")
+            return (self)
+
+        if ((target is None and filename is None) or (target is not None and filename is not None)):
+            print("Error: 'target' OR 'filename' must be specified.")
+            return (self)
+
+        all_targets = np.array(["material", "porosity", "density"])
+        if target is None:
+            target = all_targets
+        if (len(np.setdiff1d(target, all_targets)) > 0):
+            print("Error: 'target' must be one of {}.".format(all_targets))
+            return (self)
+
+        pathname = self.folder
+
+        #pathname = "../../../../hexland_tracks/toponcdf/2_dat/"
+
+        if filename is None: #get filename by searching for respective names
+            layer = str(layer) #convert int to str
+            suffix = target[0]
+            if (suffix == "m"):
+                suffix="" #"material" does not use a suffix in the filenames
+            import glob
+            filename = glob.glob(layer+suffix+".png", root_dir=pathname)
+            if len(filename) == 0:  # search for "dat"
+                filename = glob.glob(layer + suffix + ".dat", root_dir=pathname)
+            if len(filename) == 0:  # nothing found
+                print("Error: Couldn't find any match for {}.".format(pathname+layer+suffix))
+                return (self)
+            filename = filename[0]
+        else:
+            from os.path import exists
+            if not exists(pathname + filename):  #
+                print("Error: Couldn't find {}.".format(pathname+filename))
+                return (self)
+            if "d." in filename:
+                target="density"
+            if "p." in filename:
+                target = "porosity"
+            else:
+                target = "material"
+
+        if "png" in filename: #import png
+            I = Image.open(pathname + filename)
+            I = self.convert_rgb2grey(I)
+            A = np.array(I)
+        else: #import "dat"
+            A = np.loadtxt(pathname + filename, dtype="int")
+
+        setattr(self, target, A)  #save imported matrix as attribute
+        #self.Materials = A
+        self._idim = A.shape
+        self.center = ((self._idim[0] - 1) / 2, (self._idim[1] - 1) / 2)
+        if not scaling is None:
+            self.scaling = scaling
+        print('Imported map <%s> (%d x %d), center at (%.1f, %.1f).'
+              % (target, self._idim[0], self._idim[1], self.center[0], self.center[1]))
+        print('  One pixel in the data equals %d meters in reality (%d x %d)'
+              % (self.scaling, self._idim[0] * self.scaling, self._idim[1] * self.scaling))
+        if (target=="material"):
+            self.Materials = self.material #comply to naming convention in the rest of the module
+            print('  Material codes: %s' % (', '.join(str(x) for x in np.unique(self.Materials))))
+            if self.default_material is None:
+                self.default_material = self.Materials[0, 0]
+                print('  Guessing default material: %d' % self.default_material)
+        return(self)
+
+
     def read_materials(self, filename, scaling=None):
         """
         Read Material PNG image
