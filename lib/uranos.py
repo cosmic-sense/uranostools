@@ -85,7 +85,7 @@ class URANOS:
     #######
     # Input
     #######
-       def read_inputmatrix(self, layer=None, filename=None, target=None, scaling=None):
+    def read_inputmatrix(self, layer=None, filename=None, target=None, scaling=None):
         """
            Read input matrices ("material", "porosity", "density") from png or dat and
            add them as attributes
@@ -604,7 +604,7 @@ class URANOS:
             #mycbar.ax.set_yticklabels(['{0:.0f}'.format(y) for y in mycbar.get_ticks()])
 
         lox, loy = label_offset
-        if regions:
+        if regions.any():
             for i in regions:
                 mask = (self.Regions == i)
                 dataset = self.region_data.loc[i]
