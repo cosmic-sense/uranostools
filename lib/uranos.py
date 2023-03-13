@@ -5,6 +5,7 @@ CoRNy URANOS
     version: 1.01
 """
 
+import os
 import numpy as np
 from PIL import Image
 from scipy.ndimage.measurements import label as scipy_img_label
@@ -12,9 +13,9 @@ import pandas
 from glob import glob
 import matplotlib.pyplot as plt
 
-#from .corn import get_footprint, Wr, Wr_approx, sm2N_Koehli, sm2N, N2SM_Schmidt_single
-#from corny.grains.Schroen2017hess import get_footprint, Wr, Wr_approx
-#from .Koehli2021fiw import sm2N_Koehli, sm2N, N2SM_Schmidt_single
+# Additional packages will be imported locally when needed:
+#   from .Schroen2017hess import get_footprint, Wr, Wr_approx
+#   from .Koehli2021fiw   import sm2N_Koehli, sm2N, N2SM_Schmidt_single
 
 class URANOS:
     """
@@ -84,7 +85,7 @@ class URANOS:
     #######
     # Input
     #######
-    def read_inputmatrix(self, layer=None, filename=None, target=None, scaling=None):
+       def read_inputmatrix(self, layer=None, filename=None, target=None, scaling=None):
         """
            Read input matrices ("material", "porosity", "density") from png or dat and
            add them as attributes
@@ -164,11 +165,12 @@ class URANOS:
                 print('  Guessing default material: %d' % self.default_material)
         return(self)
 
-
     def read_materials(self, filename, scaling=None):
         """
         Read Material PNG image
         """
+        from PIL import Image
+
         I = Image.open(self.folder+filename)
         I = self.convert_rgb2grey(I)
         A = np.array(I)
@@ -404,6 +406,8 @@ class URANOS:
         """
         Identidy connected regions based on the Materials map
         """
+        from scipy.ndimage.measurements import label as scipy_img_label
+
         if default_material is None:
             if self.default_material is None:
                 default = np.unique(self.Materials)[0]
@@ -515,6 +519,8 @@ class URANOS:
         """
         Convert an Array of Image from RGB to Greyscale
         """
+        from PIL import Image
+
         if isinstance(obj, np.ndarray):
             A = np.zeros(shape=(obj.shape[0],obj.shape[1]), dtype=np.uint8)
             for i in range(obj.shape[0]):
@@ -1075,10 +1081,6 @@ class URANOS:
 Additional functions from CoRNy exdata.uranos
 """
 
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-
 def ReadURANOSmatrix(filename, size):
     """
     Read a single Matrix file
@@ -1205,6 +1207,7 @@ def Image2Array(filename, rx, ry):
     Load URANOS input image and convert to 2d array
     """
     from PIL import Image
+
     I = Image.open(filename)
     I = I.convert('L')      # Convert to L=greyscale, 1=black&white
     IA = np.asarray(I)       # Creates an array, white pixels==True and black pixels==False
