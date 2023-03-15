@@ -291,7 +291,7 @@ class URANOS:
 
     def read_root_var(self, var='detectorDistanceDepth2;1', alias=None, drop_zeros=True):
         """
-        Convert a Root histogramm into a 463 DataFrame of coordinates
+        Convert a Root histogramm into a pandas DataFrame of coordinates
         Performance thanks to: Divakar <https://stackoverflow.com/a/41219731/2575273>
         """
         data = self.Root[var].to_numpy(flow=True)
@@ -436,6 +436,11 @@ class URANOS:
             number of found regions
         self.region_data : DataFrame
             statistics of regions
+
+        Details
+        -------
+        If default_material is specified, the segmentation assumes that this material separates different regions, i.e. adjacent regions of different materials are not separated.
+        If default_material is None, adjacent dissimilar regions are separated.
         """
         from scipy.ndimage.measurements import label as scipy_img_label
 
@@ -466,12 +471,9 @@ class URANOS:
  #           plt.show()
             ncomponents = len(np.unique(L))
         else: #consider 'default_material' not as a separate zone
-            M = np.zeros(shape=(self._idim[0],self._idim[1]), dtype=np.uint8)
-            for i in range(self._idim[0]):
-                for j in range(self._idim[1]):
-                    M[i,j] = 0 if self.Materials[i,j] == default_material else 1
+            M = self.Materials != default_material #create binary matrix of areas without the default material
 
-            L, ncomponents = scipy_img_label(self.Materials)
+            L, ncomponents = scipy_img_label(M)
 
 
         self.Regions = L
@@ -657,10 +659,12 @@ class URANOS:
         lox, loy = label_offset
         if regions.any():
             for i in regions:
-                mask = (self.Regions == i)
+                #mask = (self.Regions == i)
                 dataset = self.region_data.loc[i]
-                
-                cmx, cmy = dataset['center_mass']
+                if np.any(np.isnan(dataset['center_mass'])) :
+                    continue #not a region with valid location
+                else:
+                    cmx, cmy = dataset['center_mass']
                 coords = (cmx+lox*i, cmy+loy*i)
                 
                 # all this clutter only for having 2 digits for origins < 1...
