@@ -235,8 +235,26 @@ class URANOS:
 
     def read_density(self, filepattern='densityMapSelected*', pad=False):
         """
-        Read URANOS density matrix
+        Read URANOS density matrix or matrices
+
+        Parameters
+        ----------
+        filepattern : str, default 'densityMapSelected*'
+            default material surrounding the actual regions, which is not considered a region (usually corresponds to self.default_material).
+            If not set, all separated groups of different voxels represent a separate classes
+        pad : bool, default False
+            add a row and a column to match matrix dimensions (fixes URANOS-bug (?) prior to 1.10)
+
+        Returns
+        -------
+        self.Regions : matrix of integer
+            denotes membership to identified regions
+
+        Details
+        -------
+        Automatically recognize the files starting with filepattern and read them in as a matrix. If there are more than one file, treat them as results from parallel URANOS simulations with identical configurations. This means that the values from multiple matrices will be averaged, which greatly reduces the noise.
         """
+        import numpy as np
         U = None
         for filename in glob(self.folder + filepattern):
             print('  Reading %s' % filename)
@@ -253,6 +271,45 @@ class URANOS:
         U = np.flipud(U)
         if pad:
             U = np.pad(U, ((0,1),(0,1)))
+        if hasattr(self, 'region_data') and (U.shape != self.Regions.shape): #resample 500 x 500 to resolution of Regions
+
+
+            from scipy.interpolate import RegularGridInterpolator
+
+            # source = np.array([[0, 0, 3, 1, 1, 0, 0],
+            #               [0, 0, 3, 2, 1, 0, 0],
+            #               [1, 1, 3, 0, 0, 1, 0],
+            #               [0, 0, 3, 0, 1, 0, 0]])
+            #
+            # dest = np.zeros((10,10))
+            source = U
+            dest = np.zeros_like(self.Regions)
+
+            x = np.arange(0, source.shape[0]) #coordinates of source
+            y = np.arange(0, source.shape[1])
+            X, Y = np.meshgrid(x, y, indexing='ij')
+
+            interp = RegularGridInterpolator((x, y), source, bounds_error=False, fill_value=None, method="nearest")
+
+            x_dest = np.arange(0, source.shape[0], step = source.shape[0]/dest.shape[0])  # coordinates of dest
+            y_dest = np.arange(0, source.shape[1], step = source.shape[1]/dest.shape[1])
+            X_dest, Y_dest = np.meshgrid(x_dest, y_dest, indexing='ij')
+            dest = interp((X_dest, Y_dest))
+
+            # fig = plt.figure()
+            # ax = fig.add_subplot(projection='3d')
+            #
+            # # interpolator
+            # ax.plot_wireframe(X_dest, Y_dest, dest, rstride=3, cstride=3,
+            #                   alpha=0.4, color='m', label='linear interp')
+            #
+            # # ground truth
+            # ax.plot_wireframe(X, Y, source, rstride=3, cstride=3,
+            #                   alpha=0.4, label='ground truth')
+            # plt.legend()
+            # plt.show()
+            U = dest #replace with resampled version
+
         self.Density = U
 
         if hasattr(self, 'region_data'):
@@ -467,8 +524,7 @@ class URANOS:
                 # updaten
                 label_tracker = max(np.unique(labeled_array))
 
-#            plt.imshow(L)
- #           plt.show()
+
             ncomponents = len(np.unique(L))
         else: #consider 'default_material' not as a separate zone
             M = self.Materials != default_material #create binary matrix of areas without the default material
@@ -611,6 +667,57 @@ class URANOS:
         """
         Plot map, annotate, and overlay
         Avoid annotation with annotate='none'
+
+        Parameters
+        ----------
+        ax:  axis handle, default: None,
+        	uses a given axes from an overarching figure panel, or creates a new axis and figure
+        image: str, default:'SM',
+        	name of the matrix used for colored plotting
+        annotate: str, default None,
+            attempts to annotate regions with a label given by a column name in U.region_data
+        overlay: defaults None
+            overlay 'Origins' to draw crosses of neutron origins onto the map
+        fontsize: int = 10
+            fontsize
+        title: str, default: None
+            title string
+        contour: bool = False,
+        	if True, draw the region borders on the map
+        regions: list of int, default: None
+            list of regions to plot, e.g., [0,4,5]; defaults to "all regions"
+        extent: int = 500
+            zoom in to a certain width/height square (500 is the whole matrix)
+        cmap: str = 'Greys'
+            colorscale used for the image plot
+        cmap_scale: int = 2
+            scales the colorscale by factor 2, which is often lighter and increases readability for annotation labels.
+        x_marker: float, default: none
+            x-distance in meters to draw a marker on top of the axis, e.g., to highlight a distance of a patch from the center
+        cross_alpha: float = 0.5
+            transparency of the central cross at (0,0). Set to 0 to remove it
+        label_offset: tuple[int, int] = (0,0)
+            x and y offset of the labels to increase readibility over region contours
+        step_fraction: float = 0.2
+            x and y steps to use for tickmarks relative to the full extent.
+        colorbar: bool = False
+            draw a colorbar
+        axis_labels: bool = True
+            axis_labels=True - draw x and y axis labels: 'x (in m)'
+        interpolation: str = 'none',
+        	interpolation of the image, can be one of 'none', 'nearest', 'bilinear', 'bicubic', 'spline16', 'spline36', 'hanning', 'hamming', 'hermite', 'kaiser', 'quadric', 'catrom', 'gaussian', 'bessel', 'mitchell', 'sinc', 'lanczos'
+
+        Returns
+        -------
+        ax : axis handle
+            handle to plotted axis
+
+        Notes
+        -----
+            The plotted dimensiones are always given in meters.
+            The routine returns an ax object which can be used to make further changes to the plot.
+            If you need to save the plot, use: ax.figure.savefig('my_plot.pdf', bbox_inches="tight")
+
         """
         
         # If no regions are provided, show all regions
