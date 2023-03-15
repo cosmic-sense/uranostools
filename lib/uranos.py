@@ -90,6 +90,22 @@ class URANOS:
            Read input matrices ("material", "porosity", "density") from png or dat and
            add them as attributes
            extends/replaces read_materials()
+
+            Parameters
+            ----------
+            layer : integer
+                layer number to be read (if filename is not specified)
+            filename : string
+                specific name of file to read (if layer is not specified)
+            filename : string of ["material", "porosity", "density"]
+                property to read. An attribute of this name will be will be assigned the matrix values.
+            layer : float
+                not yet implemented
+
+            Returns
+            -------
+            output : matrix of integer or float
+                assigned as attribute 'target' to self
         """
 
         #import numpy as np
@@ -275,7 +291,7 @@ class URANOS:
 
     def read_root_var(self, var='detectorDistanceDepth2;1', alias=None, drop_zeros=True):
         """
-        Convert a Root histogramm into a pandas DataFrame of coordinates
+        Convert a Root histogramm into a 463 DataFrame of coordinates
         Performance thanks to: Divakar <https://stackoverflow.com/a/41219731/2575273>
         """
         data = self.Root[var].to_numpy(flow=True)
@@ -404,27 +420,60 @@ class URANOS:
         
     def find_regions(self, default_material=None):
         """
-        Identidy connected regions based on the Materials map
+        Identify connected regions based on the Materials map
+
+        Parameters
+        ----------
+        default_material : integer, default None
+            default material surrounding the actual regions, which is not considered a region (usually corresponds to self.default_material).
+            If not set, all separated groups of different voxels represent a separate classes
+
+        Returns
+        -------
+        self.Regions : matrix of integer
+            denotes membership to identified regions
+        self.n_regions : integer
+            number of found regions
+        self.region_data : DataFrame
+            statistics of regions
         """
         from scipy.ndimage.measurements import label as scipy_img_label
 
-        if default_material is None:
-            if self.default_material is None:
-                default = np.unique(self.Materials)[0]
-                print('Guessing default material code: %d' % default)
-            else:
-                default = self.default_material
-        else:
-            self.default_material = default_material
-            default = default_material
-        
-        M = np.zeros(shape=(self._idim[0],self._idim[1]), dtype=np.uint8)
-        for i in range(self._idim[0]):
-            for j in range(self._idim[1]):
-                M[i,j] = 0 if self.Materials[i,j] == default else 1
-                
-        #from scipy.ndimage.measurements import label
-        L, ncomponents = scipy_img_label(M)
+        if default_material is None: #use object property, if present
+            default_material = getattr(self, "default_material", lambda: None)
+
+        if default_material is None: #treat all different IDs as different regions
+            from scipy.ndimage import label, generate_binary_structure
+            s = generate_binary_structure(2, 2)  # boolean for possible connections / der Suchfilter
+            img = self.Materials
+            L = img.copy()
+            label_tracker = 0
+
+            for color in np.unique(img):
+                dummy = (img == color) * 1  # binary representation of image
+                # cluster with connected components
+                labeled_array, num_features = label(dummy, structure=s)
+                # damit wir nicht die alten Labelwerte überschreiten
+                labeled_array = labeled_array + label_tracker
+                labeled_array[labeled_array == label_tracker] = 0
+                # schreiben der gefundenen Cluster in ein End-Array
+                L = np.where(labeled_array != 0, labeled_array, L)
+
+                # updaten
+                label_tracker = max(np.unique(labeled_array))
+
+#            plt.imshow(L)
+ #           plt.show()
+            ncomponents = len(np.unique(L))
+        else: #consider 'default_material' not as a separate zone
+            M = np.zeros(shape=(self._idim[0],self._idim[1]), dtype=np.uint8)
+            for i in range(self._idim[0]):
+                for j in range(self._idim[1]):
+                    M[i,j] = 0 if self.Materials[i,j] == default_material else 1
+
+            L, ncomponents = scipy_img_label(self.Materials)
+
+
         self.Regions = L
         self.n_regions = ncomponents
         region_data = pandas.DataFrame(index=pandas.Series(np.arange(ncomponents+1), name='id'),
@@ -433,6 +482,8 @@ class URANOS:
                                                 'Contributions', 'Origins', 'Density'])
         region_data['Regions'] = region_data.index
         for i in region_data.index:
+            if np.sum(self.Regions == i)==0:
+                continue #if no cells are found, skip this entry
             region_data.loc[i, 'Materials'] = np.median(self.Materials[self.Regions==i])
             region_data.at[i, 'center_mass'] = self._get_region_center(i, method='mass')
             region_data.at[i, 'center_geom'] = self._get_region_center(i, method='geom')
