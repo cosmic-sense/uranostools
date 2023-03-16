@@ -272,44 +272,7 @@ class URANOS:
         if pad:
             U = np.pad(U, ((0,1),(0,1)))
         if hasattr(self, 'region_data') and (U.shape != self.Regions.shape): #resample 500 x 500 to resolution of Regions
-
-
-            from scipy.interpolate import RegularGridInterpolator
-
-            # source = np.array([[0, 0, 3, 1, 1, 0, 0],
-            #               [0, 0, 3, 2, 1, 0, 0],
-            #               [1, 1, 3, 0, 0, 1, 0],
-            #               [0, 0, 3, 0, 1, 0, 0]])
-            #
-            # dest = np.zeros((10,10))
-            source = U
-            dest = np.zeros_like(self.Regions)
-
-            x = np.arange(0, source.shape[0]) #coordinates of source
-            y = np.arange(0, source.shape[1])
-            X, Y = np.meshgrid(x, y, indexing='ij')
-
-            interp = RegularGridInterpolator((x, y), source, bounds_error=False, fill_value=None, method="nearest")
-
-            x_dest = np.arange(0, source.shape[0], step = source.shape[0]/dest.shape[0])  # coordinates of dest
-            y_dest = np.arange(0, source.shape[1], step = source.shape[1]/dest.shape[1])
-            X_dest, Y_dest = np.meshgrid(x_dest, y_dest, indexing='ij')
-            dest = interp((X_dest, Y_dest))
-
-            # fig = plt.figure()
-            # ax = fig.add_subplot(projection='3d')
-            #
-            # # interpolator
-            # ax.plot_wireframe(X_dest, Y_dest, dest, rstride=3, cstride=3,
-            #                   alpha=0.4, color='m', label='linear interp')
-            #
-            # # ground truth
-            # ax.plot_wireframe(X, Y, source, rstride=3, cstride=3,
-            #                   alpha=0.4, label='ground truth')
-            # plt.legend()
-            # plt.show()
-            U = dest #replace with resampled version
-
+            U = self._resample_grid(source= U, dest_tmpl = np.zeros_like(self.Regions) ) #replace with resampled version
         self.Density = U
 
         if hasattr(self, 'region_data'):
@@ -319,6 +282,58 @@ class URANOS:
 
         print('Imported URANOS density map as `.Density` (%d x %d).' % (U.shape[0], U.shape[1]))
         return(self)
+
+    def _resample_grid(self, source, dest_tmpl):
+        """
+              Resample a grid 'source' to the dimensions of grid 'dest
+
+              Parameters
+              ----------
+              source : 2D matrix of integer, float
+                  grid to resample
+              dest_tmpl : array
+                  grid whose dimensions will be resampled to
+
+              Returns
+              -------
+              source_resampled : 2D matrix of integer, float
+                  resampled grid 'source'
+
+              """
+        from scipy.interpolate import RegularGridInterpolator
+        dest = np.zeros_like(dest_tmpl)
+
+        # source = np.array([[0, 0, 3, 1, 1, 0, 0],
+        #               [0, 0, 3, 2, 1, 0, 0],
+        #               [1, 1, 3, 0, 0, 1, 0],
+        #               [0, 0, 3, 0, 1, 0, 0]])
+        #
+        # dest = np.zeros((10,10))
+
+        x = np.arange(0, source.shape[0])  # coordinates of source
+        y = np.arange(0, source.shape[1])
+        X, Y = np.meshgrid(x, y, indexing='ij')
+
+        interp = RegularGridInterpolator((x, y), source, bounds_error=False, fill_value=None, method="nearest")
+
+        x_dest = np.arange(0, source.shape[0], step=source.shape[0] / dest.shape[0])  # coordinates of dest
+        y_dest = np.arange(0, source.shape[1], step=source.shape[1] / dest.shape[1])
+        X_dest, Y_dest = np.meshgrid(x_dest, y_dest, indexing='ij')
+        dest = interp((X_dest, Y_dest))
+
+        # fig = plt.figure()
+        # ax = fig.add_subplot(projection='3d')
+        #
+        # # interpolator
+        # ax.plot_wireframe(X_dest, Y_dest, dest, rstride=3, cstride=3,
+        #                   alpha=0.4, color='m', label='linear interp')
+        #
+        # # ground truth
+        # ax.plot_wireframe(X, Y, source, rstride=3, cstride=3,
+        #                   alpha=0.4, label='ground truth')
+        # plt.legend()
+        # plt.show()
+        return(dest)
 
     def read_root(self, filepattern, show_vars=True):
         """
@@ -664,6 +679,7 @@ class URANOS:
     def plot(self, ax=None, image='SM', annotate=None, overlay=None, fontsize=10, title=None, contour=False,
              regions=None, extent=500, cmap='Greys', cmap_scale=2, x_marker=None, cross_alpha=0.5,
              label_offset=(0,0), step_fraction=0.2, colorbar=False, axis_labels=True, interpolation='none'):
+
         """
         Plot map, annotate, and overlay
         Avoid annotation with annotate='none'
@@ -714,7 +730,7 @@ class URANOS:
 
         Notes
         -----
-            The plotted dimensiones are always given in meters.
+            The plotted dimensions are always given in meters.
             The routine returns an ax object which can be used to make further changes to the plot.
             If you need to save the plot, use: ax.figure.savefig('my_plot.pdf', bbox_inches="tight")
 
@@ -847,7 +863,7 @@ class URANOS:
             ax.set_xlabel('x (in m)')
             ax.set_ylabel('y (in m)')
         
-        return(ax)
+        return (ax)
 
 
     def histogram(self, ax=None, var='SM', layout=None, figsize=None):
