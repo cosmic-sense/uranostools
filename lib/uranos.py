@@ -538,24 +538,23 @@ class URANOS:
                 labeled_array[labeled_array == label_tracker] = 0
                 # schreiben der gefundenen Cluster in ein End-Array
                 L = np.where(labeled_array != 0, labeled_array, L)
-
                 # updaten
                 label_tracker = max(np.unique(labeled_array))
-
 
             ncomponents = len(np.unique(L))
         else: #consider 'default_material' not as a separate zone
             M = self.Materials != default_material #create binary matrix of areas without the default material
-
             L, ncomponents = scipy_img_label(M)
 
 
         self.Regions = L
         self.n_regions = ncomponents
-        region_data = pandas.DataFrame(index=pandas.Series(np.arange(ncomponents+1), name='id'),
-                                       columns=['Materials', 'center_mass', 'center_geom', 'area', 'SM',
+        #
+        region_data=pandas.DataFrame(index=np.unique(self.Regions),
+                                     columns=['Materials', 'center_mass', 'center_geom', 'area', 'SM',
                                                 'Distance_min', 'Distance_com', 'Weights', 'Neutrons',
                                                 'Contributions', 'Origins', 'Density'])
+        region_data.index.name="id" #rename index column to "id"
         region_data['Regions'] = region_data.index
         for i in region_data.index:
             if np.sum(self.Regions == i)==0:
@@ -741,8 +740,7 @@ class URANOS:
         
         # If no regions are provided, show all regions
         if regions is None and hasattr(self, 'region_data'):
-            regions = np.arange(len(self.region_data))
-        
+            regions = self.region_data.index
         if annotate is None:
             annotate = image
             
