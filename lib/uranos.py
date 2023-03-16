@@ -224,6 +224,9 @@ class URANOS:
         U = np.flipud(U)
         if pad:
             U = np.pad(U, ((0,1),(0,1)))
+        if hasattr(self, 'region_data') and (U.shape != self.Regions.shape): #resample 500 x 500 to resolution of Regions
+            U = self._resample_grid(source= U, dest_tmpl = np.zeros_like(self.Regions) ) #replace with resampled version
+
         self.Origins = U
         for i in self.region_data.index:
             U_i = U[self.Regions==i]
