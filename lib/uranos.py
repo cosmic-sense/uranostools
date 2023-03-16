@@ -754,7 +754,7 @@ class URANOS:
         
         rasterimg = ax.imshow(Var, interpolation=interpolation, cmap=cmap) #, vmax=np.max(Var)*cmap_scale)
         if contour:
-            ax.contour(self.Regions, levels=0, colors='k', linewidths=1, antialiased=True)
+            ax.contour(self.Regions, levels=len(np.unique(self.Regions)), colors='k', linewidths=1, antialiased=True)
 
         if colorbar:
             cax = ax.figure.add_axes([ax.get_position().x1+0.01,ax.get_position().y0,0.02,ax.get_position().height])
