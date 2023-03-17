@@ -96,11 +96,12 @@ class URANOS:
             layer : integer
                 layer number to be read (if filename is not specified)
             filename : string
-                specific name of file to read (if layer is not specified)
+                specific name of file to read (if layer is not specified). If 'filename' does not contain a path, the file is expected in the URANOS-folder (self.folder)
             filename : string of ["material", "porosity", "density"]
                 property to read. An attribute of this name will be will be assigned the matrix values.
             layer : float
                 not yet implemented
+            target
 
             Returns
             -------
@@ -112,19 +113,23 @@ class URANOS:
         #layer = str(11)
         #target = "material"
 
-        if ((layer is None) and (filename is None)) or ((layer is not None) and (filename is not None)):
+        if ((layer is None) and (filename is None) and (target is None)):
+            print("Error: At one of 'layer', 'filename' or 'target' must be specified.")
+            return (self)
+
+        if ((layer is not None) and (filename is not None) ) :
             print("Error: 'layer' OR 'filename' must be specified.")
             return (self)
 
-        if ((target is None and filename is None) or (target is not None and filename is not None)):
-            print("Error: 'target' OR 'filename' must be specified.")
-            return (self)
+        #if ((target is None and filename is None) or (target is not None and filename is not None)):
+        #    print("Error: 'target' OR 'filename' must be specified.")
+        #    return (self)
 
         all_targets = np.array(["material", "porosity", "density"])
         if target is None:
             target = all_targets
-        if (len(np.setdiff1d(target, all_targets)) > 0):
-            print("Error: 'target' must be one of {}.".format(all_targets))
+        if filename is None and (len(np.setdiff1d(target, all_targets)) > 0):
+            print("Error: 'target' must be one of {}, unless filename is specified.".format(all_targets))
             return (self)
 
         pathname = self.folder
@@ -144,24 +149,32 @@ class URANOS:
                 print("Error: Couldn't find any match for {}.".format(pathname+layer+suffix))
                 return (self)
             filename = filename[0]
+            filename_w_path = pathname+filename
         else:
             from os.path import exists
-            if not exists(pathname + filename):  #
-                print("Error: Couldn't find {}.".format(pathname+filename))
-                return (self)
-            if "d." in filename:
-                target="density"
-            if "p." in filename:
-                target = "porosity"
+            if ("/" in filename) or("\\" in filename):
+                filename_w_path = filename
             else:
-                target = "material"
+                filename_w_path = pathname + filename
+
+            if not exists(filename_w_path):  #
+                print("Error: Couldn't find {}.".format(filename_w_path))
+                return (self)
+            if target is None:
+                if "d." in filename:
+                    target="density"
+                else:
+                    if "p." in filename:
+                        target = "porosity"
+                    else:
+                        target = "material"
 
         if "png" in filename: #import png
-            I = Image.open(pathname + filename)
+            I = Image.open(filename_w_path)
             I = self.convert_rgb2grey(I)
             A = np.array(I)
         else: #import "dat"
-            A = np.loadtxt(pathname + filename, dtype="int")
+            A = np.loadtxt(filename_w_path, dtype="int")
 
         setattr(self, target, A)  #save imported matrix as attribute
         #self.Materials = A
@@ -492,7 +505,71 @@ class URANOS:
         self.Weights = W/W_sum
         print('Generated areal weights `.Weights`, ranging from %f to %f.' % (self.Weights.min(), self.Weights.max()))
         return(self)
-        
+    def calc_region_stats(self, regions=None):
+        """
+        Set regions (areal units for subsequent analyses) and calculates respective statistics
+
+        Parameters
+        ----------
+        regions : integer matrix, default None
+            integer matrix of IDs denoting the membership to a region. Must have the same dimensions as the existing matrix self.Materials. If not given, the attribute self.Regions is used.
+
+        Returns
+        -------
+        self.Regions : matrix of integer
+            if argument <regions> was given, the values supplied by argument <regions>
+        self.n_regions : integer
+            number of found regions
+        self.region_data : DataFrame
+            statistics of regions (still mainly empty)
+
+        Details
+        -------
+
+        """
+        if (not hasattr(self, "Materials")):
+            print("self.Material needs to be set first. Use 'U.read_inputmatrix()''")
+            return (self)
+
+        if (regions is None): #no new region specified
+            if (not hasattr(self, "Regions")):
+                print("self.Regions has not been set yet. Please supply argument 'regions'.")
+                return (self)
+        else:  #new regions specified
+            if (not hasattr(regions, "shape")) or (regions.shape != self.Materials.shape):
+                print("Argument regions must have the same shape as self.Material ({})".format(self.Materials.shape))
+                return(self)
+            self.Regions = regions
+
+        uniq_regions = np.unique(self.Regions)
+        self.n_regions = len(uniq_regions)
+        #
+        region_data = pandas.DataFrame(index=uniq_regions,
+                                       columns=['Materials', 'center_mass', 'center_geom', 'area', 'SM',
+                                                'Distance_min', 'Distance_com', 'Weights', 'Neutrons',
+                                                'Contributions', 'Origins', 'Density'])
+        region_data.index.name = "id"  # rename index column to "id"
+        region_data['Regions'] = region_data.index
+        for i in region_data.index:
+            if np.sum(self.Regions == i) == 0:
+                continue  # if no cells are found, skip this entry
+            region_data.loc[i, 'Materials'] = np.median(self.Materials[self.Regions == i])
+            region_data.at[i, 'center_mass'] = self._get_region_center(i, method='mass')
+            region_data.at[i, 'center_geom'] = self._get_region_center(i, method='geom')
+            region_data.loc[i, 'area'] = len(self.Regions[self.Regions == i]) / self._idim[0] / self._idim[1]
+            if hasattr(self, 'SM'):
+                region_data.loc[i, 'SM'] = np.median(self.SM[self.Regions == i])
+            if hasattr(self, 'Weights'):
+                region_data.loc[i, 'Weights'] = np.sum(self.Weights[self.Regions == i])
+            if hasattr(self, 'Distance'):
+                region_data.loc[i, 'Distance_min'] = np.min(self.Distance[self.Regions == i])
+                region_data.loc[i, 'Distance_com'] = self.Distance[
+                    region_data.loc[i, 'center_mass'][0], region_data.loc[i, 'center_mass'][1]]
+
+        self.region_data = region_data
+        print('Found %d regions, mapped to `.Regions`, DataFrame generated as `.region_data`.' % self.n_regions)
+        return (self)
+
     def find_regions(self, default_material=None):
         """
         Identify connected regions based on the Materials map
@@ -546,33 +623,9 @@ class URANOS:
             M = self.Materials != default_material #create binary matrix of areas without the default material
             L, ncomponents = scipy_img_label(M)
 
-
-        self.Regions = L
-        self.n_regions = ncomponents
         #
-        region_data=pandas.DataFrame(index=np.unique(self.Regions),
-                                     columns=['Materials', 'center_mass', 'center_geom', 'area', 'SM',
-                                                'Distance_min', 'Distance_com', 'Weights', 'Neutrons',
-                                                'Contributions', 'Origins', 'Density'])
-        region_data.index.name="id" #rename index column to "id"
-        region_data['Regions'] = region_data.index
-        for i in region_data.index:
-            if np.sum(self.Regions == i)==0:
-                continue #if no cells are found, skip this entry
-            region_data.loc[i, 'Materials'] = np.median(self.Materials[self.Regions==i])
-            region_data.at[i, 'center_mass'] = self._get_region_center(i, method='mass')
-            region_data.at[i, 'center_geom'] = self._get_region_center(i, method='geom')
-            region_data.loc[i, 'area'] = len(self.Regions[self.Regions==i]) / self._idim[0]/self._idim[1]
-            if hasattr(self, 'SM'):
-                region_data.loc[i, 'SM'] = np.median(self.SM[self.Regions==i])
-            if hasattr(self, 'Weights'):
-                region_data.loc[i, 'Weights'] = np.sum(self.Weights[self.Regions==i])
-            if hasattr(self, 'Distance'):
-                region_data.loc[i, 'Distance_min'] = np.min(self.Distance[self.Regions==i])
-                region_data.loc[i, 'Distance_com'] = self.Distance[region_data.loc[i, 'center_mass'][0], region_data.loc[i, 'center_mass'][1]]
-        
-        self.region_data = region_data
-        print('Found %d regions, mapped to `.Regions`, DataFrame generated as `.region_data`.' % self.n_regions)
+        self.calc_region_stats(regions=L)  #compute statistics of regions
+
         return(self)
     
     def estimate_neutrons(self, method='Koehli.2021', N0=1000, bd=1.43):
@@ -741,6 +794,9 @@ class URANOS:
         # If no regions are provided, show all regions
         if regions is None and hasattr(self, 'region_data'):
             regions = self.region_data.index
+        if regions is None and hasattr(self, 'Regions'):
+            regions = np.unique(self.Regions)
+
         if annotate is None:
             annotate = image
             
@@ -781,7 +837,7 @@ class URANOS:
             #mycbar.ax.set_yticklabels(['{0:.0f}'.format(y) for y in mycbar.get_ticks()])
 
         lox, loy = label_offset
-        if regions.any():
+        if regions is not None:
             for i in regions:
                 #mask = (self.Regions == i)
                 dataset = self.region_data.loc[i]
