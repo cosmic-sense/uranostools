@@ -197,6 +197,7 @@ class URANOS:
     def read_materials(self, filename, scaling=None):
         """
         Read Material PNG image
+        (legacy, superseded by read_inputmatrix())
         """
         from PIL import Image
 
@@ -298,58 +299,6 @@ class URANOS:
 
         print('Imported URANOS density map as `.Density` (%d x %d).' % (U.shape[0], U.shape[1]))
         return(self)
-
-    def _resample_grid(self, source, dest_tmpl):
-        """
-              Resample a grid 'source' to the dimensions of grid 'dest
-
-              Parameters
-              ----------
-              source : 2D matrix of integer, float
-                  grid to resample
-              dest_tmpl : array
-                  grid whose dimensions will be resampled to
-
-              Returns
-              -------
-              source_resampled : 2D matrix of integer, float
-                  resampled grid 'source'
-
-              """
-        from scipy.interpolate import RegularGridInterpolator
-        dest = np.zeros_like(dest_tmpl)
-
-        # source = np.array([[0, 0, 3, 1, 1, 0, 0],
-        #               [0, 0, 3, 2, 1, 0, 0],
-        #               [1, 1, 3, 0, 0, 1, 0],
-        #               [0, 0, 3, 0, 1, 0, 0]])
-        #
-        # dest = np.zeros((10,10))
-
-        x = np.arange(0, source.shape[0])  # coordinates of source
-        y = np.arange(0, source.shape[1])
-        X, Y = np.meshgrid(x, y, indexing='ij')
-
-        interp = RegularGridInterpolator((x, y), source, bounds_error=False, fill_value=None, method="nearest")
-
-        x_dest = np.arange(0, source.shape[0], step=source.shape[0] / dest.shape[0])  # coordinates of dest
-        y_dest = np.arange(0, source.shape[1], step=source.shape[1] / dest.shape[1])
-        X_dest, Y_dest = np.meshgrid(x_dest, y_dest, indexing='ij')
-        dest = interp((X_dest, Y_dest))
-
-        # fig = plt.figure()
-        # ax = fig.add_subplot(projection='3d')
-        #
-        # # interpolator
-        # ax.plot_wireframe(X_dest, Y_dest, dest, rstride=3, cstride=3,
-        #                   alpha=0.4, color='m', label='linear interp')
-        #
-        # # ground truth
-        # ax.plot_wireframe(X, Y, source, rstride=3, cstride=3,
-        #                   alpha=0.4, label='ground truth')
-        # plt.legend()
-        # plt.show()
-        return(dest)
 
     def read_root(self, filepattern, show_vars=True):
         """
@@ -505,7 +454,7 @@ class URANOS:
         self.Weights = W/W_sum
         print('Generated areal weights `.Weights`, ranging from %f to %f.' % (self.Weights.min(), self.Weights.max()))
         return(self)
-    def calc_region_stats(self, regions=None):
+    def calc_region_stats(self, regions=None, grids=None):
         """
         Set regions (areal units for subsequent analyses) and calculates respective statistics
 
@@ -513,6 +462,8 @@ class URANOS:
         ----------
         regions : integer matrix, default None
             integer matrix of IDs denoting the membership to a region. Must have the same dimensions as the existing matrix self.Materials. If not given, the attribute self.Regions is used.
+        grids : list of str, default None
+            names of grids that regional statistics are computed for, if these grids exist as attributes in self.
 
         Returns
         -------
@@ -525,8 +476,18 @@ class URANOS:
 
         Details
         -------
-
+        if parameter'grids' is supplied, for each respective grid, statistics (i.e. mean and median) are computed and stored in the table 'region_data' as <grid>_<mean|median>.
         """
+        if grids is not None:
+            non_existing = np.setdiff1d(grids, dir(self))
+            if (len(non_existing) > 0):
+                print("Warning: Requested grid(s) not found and omitted: {}".format(non_existing))
+                grids = np.setdiff1d(grids, non_existing) #remove nonexisting grids from list
+
+            if (not hasattr(self, "Materials")):
+                print("self.Material needs to be set first. Use 'U.read_inputmatrix()''")
+                return (self)
+
         if (not hasattr(self, "Materials")):
             print("self.Material needs to be set first. Use 'U.read_inputmatrix()''")
             return (self)
@@ -565,6 +526,10 @@ class URANOS:
                 region_data.loc[i, 'Distance_min'] = np.min(self.Distance[self.Regions == i])
                 region_data.loc[i, 'Distance_com'] = self.Distance[
                     region_data.loc[i, 'center_mass'][0], region_data.loc[i, 'center_mass'][1]]
+            if grids is not None: #compute additional stats for requested grids
+                for grid in grids:
+                    region_data.loc[i, grid + '_mean']   = np.mean  (getattr(self, grid)[self.Regions == i])
+                    region_data.loc[i, grid + '_median'] = np.median(getattr(self, grid)[self.Regions == i])
 
         self.region_data = region_data
         print('Found %d regions, mapped to `.Regions`, DataFrame generated as `.region_data`.' % self.n_regions)
@@ -726,7 +691,59 @@ class URANOS:
         elif method=='mass':
             center = (indices[1].mean(), indices[0].mean())
         return([int(np.round(x)) for x in center])
-    
+
+    def _resample_grid(self, source, dest_tmpl):
+        """
+              Resample a grid 'source' to the dimensions of grid 'dest
+
+              Parameters
+              ----------
+              source : 2D matrix of integer, float
+                  grid to resample
+              dest_tmpl : array
+                  grid whose dimensions will be resampled to
+
+              Returns
+              -------
+              source_resampled : 2D matrix of integer, float
+                  resampled grid 'source'
+
+              """
+        from scipy.interpolate import RegularGridInterpolator
+        dest = np.zeros_like(dest_tmpl)
+
+        # source = np.array([[0, 0, 3, 1, 1, 0, 0],
+        #               [0, 0, 3, 2, 1, 0, 0],
+        #               [1, 1, 3, 0, 0, 1, 0],
+        #               [0, 0, 3, 0, 1, 0, 0]])
+        #
+        # dest = np.zeros((10,10))
+
+        x = np.arange(0, source.shape[0])  # coordinates of source
+        y = np.arange(0, source.shape[1])
+        X, Y = np.meshgrid(x, y, indexing='ij')
+
+        interp = RegularGridInterpolator((x, y), source, bounds_error=False, fill_value=None, method="nearest")
+
+        x_dest = np.arange(0, source.shape[0], step=source.shape[0] / dest.shape[0])  # coordinates of dest
+        y_dest = np.arange(0, source.shape[1], step=source.shape[1] / dest.shape[1])
+        X_dest, Y_dest = np.meshgrid(x_dest, y_dest, indexing='ij')
+        dest = interp((X_dest, Y_dest))
+
+        # fig = plt.figure()
+        # ax = fig.add_subplot(projection='3d')
+        #
+        # # interpolator
+        # ax.plot_wireframe(X_dest, Y_dest, dest, rstride=3, cstride=3,
+        #                   alpha=0.4, color='m', label='linear interp')
+        #
+        # # ground truth
+        # ax.plot_wireframe(X, Y, source, rstride=3, cstride=3,
+        #                   alpha=0.4, label='ground truth')
+        # plt.legend()
+        # plt.show()
+        return (dest)
+
     ########
     # Output
     ########
@@ -797,6 +814,8 @@ class URANOS:
         if regions is None and hasattr(self, 'Regions'):
             regions = np.unique(self.Regions)
 
+
+
         if annotate is None:
             annotate = image
             
@@ -837,7 +856,7 @@ class URANOS:
             #mycbar.ax.set_yticklabels(['{0:.0f}'.format(y) for y in mycbar.get_ticks()])
 
         lox, loy = label_offset
-        if regions is not None:
+        if (regions is not None) and hasattr(self, "region_data"):
             for i in regions:
                 #mask = (self.Regions == i)
                 dataset = self.region_data.loc[i]
@@ -865,8 +884,12 @@ class URANOS:
                     ax.annotate('{0:{1}}\n$\pm${2:{3}}'.format(dataset['Origins'], fmt, dataset['Origins_err'], fmt_err),
                         coords, fontsize=fontsize, ha='center', va='center')
                 else:
-                    ax.annotate('{0:{1}}'.format(dataset[annotate], fmt),
-                        coords, fontsize=fontsize, ha='center', va='center')
+                    if (fmt=="%s"):  #generic formatting for all remaining cases
+                        ax.annotate('{}'.format(dataset[annotate], fmt),
+                                    coords, fontsize=fontsize, ha='center', va='center')
+                    else:
+                        ax.annotate('{0:{1}}'.format(dataset[annotate], fmt),
+                                    coords, fontsize=fontsize, ha='center', va='center')
 
         #plt.title(r'$\theta_1=5\,\%$, $\theta_2=10\,\%$, $R=200\,$m')
         # Tick format in meters
