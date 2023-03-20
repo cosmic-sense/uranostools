@@ -134,22 +134,20 @@ class URANOS:
 
         pathname = self.folder
 
-        #pathname = "../../../../hexland_tracks/toponcdf/2_dat/"
-
         if filename is None: #get filename by searching for respective names
             layer = str(layer) #convert int to str
             suffix = target[0]
             if (suffix == "m"):
                 suffix="" #"material" does not use a suffix in the filenames
             import glob
-            filename = glob.glob(layer+suffix+".png", root_dir=pathname)
+            filename = glob.glob(pathname + layer + suffix + ".png")
             if len(filename) == 0:  # search for "dat"
-                filename = glob.glob(layer + suffix + ".dat", root_dir=pathname)
+                filename = glob.glob(pathname + layer + suffix + ".dat")
             if len(filename) == 0:  # nothing found
                 print("Error: Couldn't find any match for {}.".format(pathname+layer+suffix))
                 return (self)
             filename = filename[0]
-            filename_w_path = pathname+filename
+            filename_w_path = filename
         else:
             from os.path import exists
             if ("/" in filename) or("\\" in filename):
