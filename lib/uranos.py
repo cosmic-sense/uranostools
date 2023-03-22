@@ -85,7 +85,115 @@ class URANOS:
     #######
     # Input
     #######
-    def read_inputmatrix(self, layer=None, filename=None, target=None, scaling=None):
+    def condense_runs(self, folder, dest_dir):
+        """
+        Read matrix outputs from multiple (parallel) runs from a folder and condense to single file, where possible
+
+        Parameters
+        ----------
+        folder : string
+           path to folder containing multirun-files
+        dest_dir : string
+           parth to folder where condensed files are created
+
+        Returns
+        -------
+        -
+        condensed output files in dest_dir
+
+        Remarks
+        -------
+        All files containing "Map" in their name are aggregated by summing up.
+        'AlbedoNeutronLayerDistances_*' are aggregated by appending to each other.
+        All other files are copied.
+
+        """
+        import glob
+        files = glob.glob(folder + "*.*")
+        import re
+        date_ptrn = "\d{8}-\d{4}"
+        rx = re.compile(".*(" + date_ptrn + ").*")
+
+        files = [stri for stri in files if
+                 re.search(pattern=rx, string=stri) is not None]  # only use files with date in name
+        files = np.array(files)
+
+        # dates = [re.sub(pattern=r".*(\d{8}-\d{4}).*", repl='\\1', string=stri) for stri in files]
+        dates = [re.sub(pattern=rx, repl='\\1', string=stri) for stri in files]
+        dates = np.unique(dates)
+        print("Aggregating results from {} runs: {}".format(len(dates), dates))
+
+        dest_files = [re.sub(pattern=r"(.*)_*" + date_ptrn + ".*", repl='\\1', string=stri) for stri in
+                      files]  # extract part before the date string
+        dest_files = [re.sub(pattern=r".*[/\\]", repl='', string=stri) for stri in dest_files]  # discard any paths
+        dest_files = np.array(dest_files)
+
+        dest_file_groups = np.unique(dest_files)  # the "groups" of files to be aggregated
+
+        # mode of aggregation
+        append_group = ['AlbedoNeutronLayerDistances_']  # files to be appended
+        add_group = [str for str in dest_file_groups if "Map" in str]  # files to be added
+        copy_group = ['Uranos_', 'liveViewGraphs_', 'uranosRawHistos_']  # files to be ignored / cannot be aggregated
+
+        from datetime import datetime
+        suffix = datetime.today().strftime('%Y%m%d-%H%M')  # suffix for newly generated files
+
+        import os
+        if not os.path.exists(dest_dir):
+            os.makedirs(dest_dir)
+        else:
+            print("Warning: des_dir existed, overwriting files...")
+
+        from shutil import copy2
+
+        for file_group in dest_file_groups:
+
+            files_set = files[dest_files == file_group]  # select files belonging to current class
+            file_ext = re.sub(pattern=r".*(\..*)$", repl="\\1", string=files_set[0])  # get file extension
+
+            if (file_group in copy_group):  # do not aggregate, just copy files
+                for ff in files_set:
+                    copy2(src=ff, dst=dest_dir)
+                continue
+
+            if (file_group in append_group):  # aggregate by appending files
+                f = open(dest_dir + file_group + suffix + file_ext, "w")
+                from_line = 0  # read the first line only in the first file
+                for ff in list(files_set):
+                    tt = open(ff)
+                    f.writelines(tt.readlines()[from_line:])
+                    from_line = 1  # read the first line only in the first file, in the others, skip header
+                    tt.close()
+                f.close()
+                continue
+
+            if (file_group in add_group):  # aggregate by summing up matrices
+                M_aggr = None
+                for ff in list(files_set):
+                    self = self.read_inputmatrix(filename=ff, target="temp", silent=True)
+                    if M_aggr is None:
+                        M_aggr = self.temp  # use the first matrix read as start
+                    else:
+                        if M_aggr.shape != self.temp.shape:
+                            print("{} has different dimensions {} than other matrices {}, terminated.".format(ff,
+                                                                                                              M_aggr.shape,
+                                                                                                              self.temp.shape))
+                            return
+                        M_aggr += self.temp  # sum up
+                        self.temp = None  # discard read matrix
+                # write to file
+                import pandas as pd
+                df = pd.DataFrame(data=M_aggr)
+                df.to_csv(dest_dir + file_group + suffix + file_ext, sep='\t', header=False, float_format='%i', index=False)
+
+                continue
+            f = open(dest_dir + "condense_log.txt", "a")
+            f.write('\n'+('\n'.join(dates)))
+            f.writelines("... condensed to *"+suffix+"*." )
+            f.close()
+        return
+
+    def read_inputmatrix(self, layer=None, filename=None, target=None, scaling=None, silent=False):
         """
            Read input matrices ("material", "porosity", "density") from png or dat and
            add them as attributes
@@ -98,10 +206,13 @@ class URANOS:
             filename : string
                 specific name of file to read (if layer is not specified). If 'filename' does not contain a path, the file is expected in the URANOS-folder (self.folder)
             filename : string of ["material", "porosity", "density"]
-                property to read. An attribute of this name will be will be assigned the matrix values.
+                property to read. An attribute of this name will be assigned the matrix values.
             layer : float
                 not yet implemented
-            target
+            target: string
+                name of attribute the loaded matrix is stored to
+            silent: bool, default: False
+                suppress text output
 
             Returns
             -------
@@ -180,16 +291,19 @@ class URANOS:
         self.center = ((self._idim[0] - 1) / 2, (self._idim[1] - 1) / 2)
         if not scaling is None:
             self.scaling = scaling
-        print('Imported map <%s> (%d x %d), center at (%.1f, %.1f).'
-              % (target, self._idim[0], self._idim[1], self.center[0], self.center[1]))
-        print('  One pixel in the data equals %d meters in reality (%d x %d)'
-              % (self.scaling, self._idim[0] * self.scaling, self._idim[1] * self.scaling))
+        if not silent:
+            print('Imported map <%s> (%d x %d), center at (%.1f, %.1f).'
+                % (target, self._idim[0], self._idim[1], self.center[0], self.center[1]))
+            print('  One pixel in the data equals %d meters in reality (%d x %d)'
+                  % (self.scaling, self._idim[0] * self.scaling, self._idim[1] * self.scaling))
         if (target=="material"):
             self.Materials = self.material #comply to naming convention in the rest of the module
-            print('  Material codes: %s' % (', '.join(str(x) for x in np.unique(self.Materials))))
+            if not silent:
+                print('  Material codes: %s' % (', '.join(str(x) for x in np.unique(self.Materials))))
             if self.default_material is None:
                 self.default_material = self.Materials[0, 0]
-                print('  Guessing default material: %d' % self.default_material)
+                if not silent:
+                    print('  Guessing default material: %d' % self.default_material)
         return(self)
 
     def read_materials(self, filename, scaling=None):
@@ -692,30 +806,23 @@ class URANOS:
 
     def _resample_grid(self, source, dest_tmpl):
         """
-              Resample a grid 'source' to the dimensions of grid 'dest
+        Resample a grid 'source' to the dimensions of grid 'dest
 
-              Parameters
-              ----------
-              source : 2D matrix of integer, float
-                  grid to resample
-              dest_tmpl : array
-                  grid whose dimensions will be resampled to
+        Parameters
+        ----------
+        source : 2D matrix of integer, float
+          grid to resample
+        dest_tmpl : array
+          grid whose dimensions will be resampled to
 
-              Returns
-              -------
-              source_resampled : 2D matrix of integer, float
-                  resampled grid 'source'
+        Returns
+        -------
+        source_resampled : 2D matrix of integer, float
+          resampled grid 'source'
 
-              """
+        """
         from scipy.interpolate import RegularGridInterpolator
         dest = np.zeros_like(dest_tmpl)
-
-        # source = np.array([[0, 0, 3, 1, 1, 0, 0],
-        #               [0, 0, 3, 2, 1, 0, 0],
-        #               [1, 1, 3, 0, 0, 1, 0],
-        #               [0, 0, 3, 0, 1, 0, 0]])
-        #
-        # dest = np.zeros((10,10))
 
         x = np.arange(0, source.shape[0])  # coordinates of source
         y = np.arange(0, source.shape[1])
@@ -1494,8 +1601,33 @@ def collect_results(files, size=500, norm_id=0,
                     radius=[200,200], dropx=0, dropy=0,
                     repeat_shift=None, repeat_center=[0,0]):
     """
-    Note:
+    Collect results from multiple files
+
+    Parameters
+    ----------
+    files : list of str
+        files to be read
+    size : integer, default 500
+        dimension of matrix (to be read, to be created?)
+    norm_id : integer, default 0
         Set norm_id = -1 if no normalization should be done
+    radius : integer list, length 2, default [200,200]
+        dimension of inner centered matrix to crop results to
+    dropx, dropy : integer, default 0
+        some offsets used in cropping?
+    repeat_shift:
+        ???
+    repeat_center:
+        ???
+
+
+    Returns
+    -------
+    output : matrix of integer or float
+        ???
+
+    Note
+    ----
     Usage:
         files = [
             'a.csv',
