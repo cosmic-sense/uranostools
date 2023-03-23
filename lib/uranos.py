@@ -584,11 +584,21 @@ class URANOS:
         self.n_regions : integer
             number of found regions
         self.region_data : DataFrame
-            statistics of regions (still mainly empty)
+            statistics of regions (still mainly empty, columns see below)
 
         Details
         -------
-        if parameter'grids' is supplied, for each respective grid, statistics (i.e. mean and median) are computed and stored in the table 'region_data' as <grid>_<mean|median>.
+         self.region_data can contain the following columns:
+        'Materials': median of material codes
+        'center_mass'
+        'center_geom'
+        'SM': mean of grid 'SM'
+        'Weights': sum of grid 'weights'
+        'Distance_min': min of grid 'Distance'
+        'Distance_com': distance of 'center_mass' to grid centre
+        *'_mean': mean of specified grid
+        *'_median': median of grid specified in parameter 'grids'
+
         """
         if grids is not None:
             non_existing = np.setdiff1d(grids, dir(self))
@@ -918,8 +928,6 @@ class URANOS:
             regions = self.region_data.index
         if regions is None and hasattr(self, 'Regions'):
             regions = np.unique(self.Regions)
-
-
 
         if annotate is None:
             annotate = image
