@@ -85,7 +85,7 @@ class URANOS:
     #######
     # Input
     #######
-    def condense_runs(self, folder, dest_dir):
+    def condense_runs(self, folder, dest_dir, pattern=None):
         """
         Read matrix outputs from multiple (parallel) runs from a folder and condense to single file, where possible
 
@@ -94,12 +94,14 @@ class URANOS:
         folder : string
            path to folder containing multirun-files
         dest_dir : string
-           parth to folder where condensed files are created
+           path to folder where condensed files are created
+        pattern : string
+            regular expression for selecting only a subset of the files. Case sensitive.
 
         Returns
         -------
-        -
-        condensed output files in dest_dir
+        None
+        [side effect: condensed output files in 'dest_dir']
 
         Remarks
         -------
@@ -107,18 +109,33 @@ class URANOS:
         'AlbedoNeutronLayerDistances_*' are aggregated by appending to each other.
         All other files are copied.
 
+        Example
+        -------
+        U.condense_runs(folder=U.folder, dest_dir="./condensed_output")
+
         """
         import glob
         files = glob.glob(folder + "*.*")
         import re
+        if pattern is not None:
+            try:
+                rx = re.compile(pattern)
+            except:
+                print("'pattern' must be a valid regular expression.")
+                return
+        files = [stri for stri in files if
+                 re.search(pattern=rx, string=stri) is not None]  # only use files matching specified pattern
+
         date_ptrn = "\d{8}-\d{4}"
         rx = re.compile(".*(" + date_ptrn + ").*")
-
         files = [stri for stri in files if
                  re.search(pattern=rx, string=stri) is not None]  # only use files with date in name
         files = np.array(files)
+        if len(files)==0:
+            print("No (valid) files found, nothing done.")
+            return
 
-        # dates = [re.sub(pattern=r".*(\d{8}-\d{4}).*", repl='\\1', string=stri) for stri in files]
+        # extract dates from filenames
         dates = [re.sub(pattern=rx, repl='\\1', string=stri) for stri in files]
         dates = np.unique(dates)
         print("Aggregating results from {} runs: {}".format(len(dates), dates))
@@ -142,7 +159,7 @@ class URANOS:
         if not os.path.exists(dest_dir):
             os.makedirs(dest_dir)
         else:
-            print("Warning: des_dir existed, overwriting files...")
+            print("Warning: 'dest_dir' exists, overwriting files...")
 
         from shutil import copy2
 
@@ -590,8 +607,8 @@ class URANOS:
         -------
          self.region_data can contain the following columns:
         'Materials': median of material codes
-        'center_mass'
-        'center_geom'
+        'center_mass': coordinates of centre of gravity
+        'center_geom': coordinates of mean of x-y-extent
         'SM': mean of grid 'SM'
         'Weights': sum of grid 'weights'
         'Distance_min': min of grid 'Distance'
