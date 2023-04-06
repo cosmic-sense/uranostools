@@ -367,8 +367,9 @@ class URANOS:
         U = np.flipud(U)
         if pad:
             U = np.pad(U, ((0,1),(0,1)))
-        if hasattr(self, 'region_data') and (U.shape != self.Regions.shape): #resample 500 x 500 to resolution of Regions
-            U = self._resample_grid(source= U, dest_tmpl = np.zeros_like(self.Regions) ) #replace with resampled version
+        if hasattr(self, '_idim') and (U.shape != self._idim): #resample 500 x 500 (standard output) to actual resolution
+            print("...resample grid from {} to {}...".format(U.shape, self._idim))
+            U = self._resample_grid(source=U, dest_tmpl=np.zeros(self._idim))  # replace with resampled version
 
         self.Origins = U
         for i in self.region_data.index:
@@ -379,14 +380,16 @@ class URANOS:
         print('Imported URANOS origins as `.Origins` (%d x %d).' % (U.shape[0], U.shape[1]))
         return(self)
 
-    def read_density(self, filepattern='densityMapSelected*', pad=False):
+    def read_density(self, filepattern='densityMapSelected*', target="Density", pad=False):
         """
         Read URANOS density matrix or matrices
 
         Parameters
         ----------
         filepattern : str, default 'densityMapSelected*'
-            files with names beginning with ths pattern will be read
+            files with names beginning with ths pattern will be read,
+        target: string, default 'Density'
+            name of attribute the loaded matrix is stored to
         pad : bool, default False
             add a row and a column to match matrix dimensions (fixes URANOS-bug (?) prior to 1.10)
 
@@ -416,16 +419,18 @@ class URANOS:
         U = np.flipud(U)
         if pad:
             U = np.pad(U, ((0,1),(0,1)))
-        if hasattr(self, 'region_data') and (U.shape != self.Regions.shape): #resample 500 x 500 to resolution of Regions
-            U = self._resample_grid(source= U, dest_tmpl = np.zeros_like(self.Regions) ) #replace with resampled version
-        self.Density = U
+
+        if hasattr(self, '_idim') and (U.shape != self._idim): #resample 500 x 500 (standard output) to actual resolution
+            print("...resample grid from {} to {}...".format(U.shape, self._idim))
+            U = self._resample_grid(source = U, dest_tmpl = np.zeros(self._idim) ) #replace with resampled version
+        setattr(self, target, U)  #save read matrix as an attribute of self
 
         if hasattr(self, 'region_data'):
             for i in self.region_data.index:
-                self.region_data.loc[i, 'Density'] = np.mean(U[self.Regions==i])
-            self.region_data['Density'] /= self.region_data['Density'].max()
+                self.region_data.loc[i, target] = np.mean(U[self.Regions==i])
+            self.region_data[target] /= self.region_data[target].max()
 
-        print('Imported URANOS density map as `.Density` (%d x %d).' % (U.shape[0], U.shape[1]))
+        print('Imported URANOS density map as `.'+target+'` (%d x %d).' % (U.shape[0], U.shape[1]))
         return(self)
 
     def read_root(self, filepattern, show_vars=True):
