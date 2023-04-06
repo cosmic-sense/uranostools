@@ -111,7 +111,7 @@ class URANOS:
 
         Example
         -------
-        U.condense_runs(folder=U.folder, dest_dir="./condensed_output")
+        U.condense_runs(folder=U.folder, dest_dir="./condensed_output", pattern="Cherrypicking")
 
         """
         import glob
@@ -386,8 +386,7 @@ class URANOS:
         Parameters
         ----------
         filepattern : str, default 'densityMapSelected*'
-            default material surrounding the actual regions, which is not considered a region (usually corresponds to self.default_material).
-            If not set, all separated groups of different voxels represent a separate classes
+            files with names beginning with ths pattern will be read
         pad : bool, default False
             add a row and a column to match matrix dimensions (fixes URANOS-bug (?) prior to 1.10)
 
