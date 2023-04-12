@@ -395,8 +395,8 @@ class URANOS:
 
         Returns
         -------
-        self.Regions : matrix of integer
-            denotes membership to identified regions
+        self : object of class URANOS
+            containing the read matrix as an attribute
 
         Details
         -------
@@ -589,7 +589,7 @@ class URANOS:
         return(self)
     def calc_region_stats(self, regions=None, grids=None):
         """
-        Set regions (areal units for subsequent analyses) and calculates respective statistics
+        Calculate statistics for regions (areal units for subsequent analyses)
 
         Parameters
         ----------
@@ -648,7 +648,10 @@ class URANOS:
         uniq_regions = np.unique(self.Regions)
         self.n_regions = len(uniq_regions)
         #
-        region_data = pandas.DataFrame(index=uniq_regions,
+        if (hasattr(self, "region_data")):
+            region_data = self.region_data #use/update existing table
+        else:
+            region_data = pandas.DataFrame(index=uniq_regions,
                                        columns=['Materials', 'center_mass', 'center_geom', 'area', 'SM',
                                                 'Distance_min', 'Distance_com', 'Weights', 'Neutrons',
                                                 'Contributions', 'Origins', 'Density'])
