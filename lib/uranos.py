@@ -107,6 +107,7 @@ class URANOS:
         -------
         All files containing "Map" in their name are aggregated by summing up.
         'AlbedoNeutronLayerDistances_*' are aggregated by appending to each other.
+        'Uranos_*.cfg' are aggregated by summing up the number of simulated neutrons.
         All other files are copied.
 
         Example
@@ -145,12 +146,13 @@ class URANOS:
         dest_files = [re.sub(pattern=r".*[/\\]", repl='', string=stri) for stri in dest_files]  # discard any paths
         dest_files = np.array(dest_files)
 
-        dest_file_groups = np.unique(dest_files)  # the "groups" of files to be aggregated
+        dest_file_groups = np.unique(dest_files)  # the "groups" of files to be aggregated (e.g. "densityMapSelected_", "DensityTrackMapThermalNeutron", etc.)
 
         # mode of aggregation
-        append_group = ['AlbedoNeutronLayerDistances_']  # files to be appended
-        add_group = [str for str in dest_file_groups if "Map" in str]  # files to be added
-        copy_group = ['Uranos_', 'liveViewGraphs_', 'uranosRawHistos_']  # files to be ignored / cannot be aggregated
+        append_group = ['AlbedoNeutronLayerDistances_']  # files to be aggregated by appending
+        add_group    = [str for str in dest_file_groups if "Map" in str]  # files to be aggregated by adding up
+        copy_group   = ['liveViewGraphs_', 'uranosRawHistos_']  # files to be ignored / cannot be aggregated. Files will just be copied
+        special_group = ['Uranos_']  # files to be treasted specially
 
         from datetime import datetime
         suffix = datetime.today().strftime('%Y%m%d-%H%M')  # suffix for newly generated files
@@ -164,7 +166,7 @@ class URANOS:
         from shutil import copy2
 
         for file_group in dest_file_groups:
-
+            print("...aggregating "+file_group)
             files_set = files[dest_files == file_group]  # select files belonging to current class
             file_ext = re.sub(pattern=r".*(\..*)$", repl="\\1", string=files_set[0])  # get file extension
 
@@ -203,6 +205,35 @@ class URANOS:
                 df = pd.DataFrame(data=M_aggr)
                 df.to_csv(dest_dir + file_group + suffix + file_ext, sep='\t', header=False, float_format='%i', index=False)
 
+                continue
+
+            if (file_group in special_group):  # do something special (aggregate Uranos_*.cfg by summing up the simulated neutrons)
+                tt = open(files_set[0])
+                tmpl = tt.readlines()
+                tt.close()
+                not_equal = [] #collect names of cfg files that differ from first one
+                nneutrons = 0 #for summing up number of neutrons
+                ignore_lines = np.array([5, 8]) #lines to be irgnored in comparison fo config files
+                for ff in files_set:
+                    tt = open(ff)
+                    tmpl2 = tt.readlines()
+                    if len(tmpl) != len(tmpl2) or not np.all(np.delete(tmpl, ignore_lines) == np.delete(tmpl2, ignore_lines)): #this file is different from the first
+                        not_equal = np.append(not_equal, ff)
+                    tt.close()
+                    n = tmpl2[5].split("\t", 1)[0]
+                    try:
+                        n = int(n)
+                    except:
+                        print("Cannot read number of simulated neutrons from" + ff +", line 6. Skipped.")
+                        continue
+                    nneutrons += n
+                #generate summary file
+                tmpl[5] = re.sub(pattern="[^\\t]*", repl=str(nneutrons), string=tmpl[5], count=1) #add sum of simulatd neutrons
+                tt = open(dest_dir + file_group + suffix + file_ext, "w")
+                tt.writelines(tmpl)
+                tt.close()
+                if len(not_equal)>0:
+                    print("Warning: Some Uranos_*.cfg differ from the first one read: "+ str(not_equal))
                 continue
             f = open(dest_dir + "condense_log.txt", "a")
             f.write('\n'+('\n'.join(dates)))
