@@ -70,8 +70,45 @@ class URANOS:
     def __init__(self, folder='', scaling=2, default_material=None,
                  hum=5, press=1013, verbose=False):
         """
-        Initialization
-        """    
+        Initialization of an instance of class URANOS
+
+        Parameters
+        ----------
+        folder : string
+           path to folder containing  model output files
+        scaling : float, default 2
+           one pixel in the data is 'scaling' meters in reality
+        default_material : int, default None
+            URANOS code for default material
+        hum : float, default 5
+            ???
+        press : float, default 1013
+            barometric pressure in mbar (?)
+        verbose : bool, default False
+            enable additional messaging
+
+        Returns
+        -------
+        Instance of class URANOS with the following attributes:
+        verbose = verbose
+        folder
+        scaling
+        center
+        default_material
+        hum
+        press
+        footprint_radius
+        n_sim_neutrons
+
+        Remarks
+        -------
+        When a config-file ('Uranos_*.cfg') is found in 'folder', (some of) the respective properties are read and overwrite any specifications given as arguments.
+
+        Example
+        -------
+        U = URANOS(folder="myURANOSfolder/", scaling=1, hum=3)
+        """
+
         self.verbose = verbose
         self.folder = folder
         self.scaling = scaling # one pixel in the data is x meters in reality
@@ -81,7 +118,39 @@ class URANOS:
         self.press = press
         # Initial approximation with sm=20%, will be updated by materials2sm
         self.footprint_radius = np.nan #get_footprint(0.2, self.hum, self.press)
-    
+        self.n_sim_neutrons = np.nan
+
+        #find and read config file
+        import glob
+        files = glob.glob(folder + "Uranos_*.*")
+
+        if (len(files) == 0):
+            print("No config-files found in "+ folder + ". Some calculations may fail.")
+            return
+
+        if (len(files) > 1):
+            print("Multiple config-files found in " + folder+", using only "+ ff)
+
+        ff = files[0]
+        tt = open(ff)
+        tmpl2 = tt.readlines()
+        tt.close()
+
+
+        self.n_sim_neutrons  = self._extract_value_from_cfg(filecont=tmpl2, line=5, ff=ff, vtype=int) # number of simulated neutrons
+        self.hum             = self._extract_value_from_cfg(filecont=tmpl2, line=17, ff=ff, vtype=float) # Air humidity [g/m3]
+        self.dimension       = self._extract_value_from_cfg(filecont=tmpl2, line=6, ff=ff, vtype=float) #Dimension [mm]
+
+    def _extract_value_from_cfg(self, filecont, line, ff="[]", vtype=float):
+        # internal function: extract a numeric value from a specified line of the content of a cfg-file with checking
+        n = filecont[line].split("\t", 1)[0]
+        try:
+            n = vtype(n)
+        except:
+            print("Cannot read " + str(vtype) +" from" + ff + ", line "+ line)
+            n = np.NaN
+        return(n)
+
     #######
     # Input
     #######
@@ -220,15 +289,12 @@ class URANOS:
                     if len(tmpl) != len(tmpl2) or not np.all(np.delete(tmpl, ignore_lines) == np.delete(tmpl2, ignore_lines)): #this file is different from the first
                         not_equal = np.append(not_equal, ff)
                     tt.close()
-                    n = tmpl2[5].split("\t", 1)[0]
-                    try:
-                        n = int(n)
-                    except:
-                        print("Cannot read number of simulated neutrons from" + ff +", line 6. Skipped.")
-                        continue
+
+                    n = self._extract_value_from_cfg(filecont=tmpl2, line=5, ff=ff, vtype=int)
+
                     nneutrons += n
                 #generate summary file
-                tmpl[5] = re.sub(pattern="[^\\t]*", repl=str(nneutrons), string=tmpl[5], count=1) #add sum of simulatd neutrons
+                tmpl[5] = re.sub(pattern="[^\\t]*", repl=str(nneutrons), string=tmpl[5], count=1) #add sum of simulated neutrons
                 tt = open(dest_dir + file_group + suffix + file_ext, "w")
                 tt.writelines(tmpl)
                 tt.close()
@@ -249,16 +315,14 @@ class URANOS:
 
             Parameters
             ----------
-            layer : integer
+            layer : integer, default None
                 layer number to be read (if filename is not specified)
-            filename : string
+            filename : string, default None
                 specific name of file to read (if layer is not specified). If 'filename' does not contain a path, the file is expected in the URANOS-folder (self.folder)
-            filename : string of ["material", "porosity", "density"]
+            target : string of ["material", "porosity", "density"], default None
                 property to read. An attribute of this name will be assigned the matrix values.
-            layer : float
-                not yet implemented
-            target: string
-                name of attribute the loaded matrix is stored to
+            scaling: float, default None
+                one pixel in the data is 'scaling' meters in reality. Ignored, when self already has an attribute "dimension", from which "scaling" is then computed
             silent: bool, default: False
                 suppress text output
 
@@ -337,8 +401,12 @@ class URANOS:
         #self.Materials = A
         self._idim = A.shape
         self.center = ((self._idim[0] - 1) / 2, (self._idim[1] - 1) / 2)
-        if not scaling is None:
-            self.scaling = scaling
+        if hasattr(self, "dimension"):
+            self.scaling = self.dimension/1000 / self._idim[0]
+        else:
+            if not scaling is None:
+                self.scaling = scaling
+
         if not silent:
             print('Imported map <%s> (%d x %d), center at (%.1f, %.1f).'
                 % (target, self._idim[0], self._idim[1], self.center[0], self.center[1]))
@@ -996,7 +1064,8 @@ class URANOS:
             fig, ax = plt.subplots(figsize=(5,5))
         
         if title is None:
-            title = 'Map of %s' % self.variable_labels[image]
+            if image in self.variable_labels.keys():
+                title = 'Map of %s' % self.variable_labels[image]
             if annotate != image and annotate in self.variable_labels:
                 title += '\nAnnotation: %s' % self.variable_labels[annotate]
             if overlay=='Origins':   title += '\nOverlay: sim. Neutron Origins (x)'
