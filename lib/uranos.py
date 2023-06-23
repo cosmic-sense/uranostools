@@ -466,7 +466,7 @@ class URANOS:
         U = np.flipud(U)
         if pad:
             U = np.pad(U, ((0,1),(0,1)))
-        if hasattr(self, '_idim') and (U.shape != self._idim): #resample 500 x 500 (standard output) to actual resolution
+        if hasattr(self, '_idim') and (U.shape != self._idim): #resample 500 x 500 (standard output) to actual resolution taken from input matrix
             print("...resample grid from {} to {}...".format(U.shape, self._idim))
             U = self._resample_grid(source=U, dest_tmpl=np.zeros(self._idim))  # replace with resampled version
 
@@ -968,18 +968,9 @@ class URANOS:
         X_dest, Y_dest = np.meshgrid(x_dest, y_dest, indexing='ij')
         dest = interp((X_dest, Y_dest))
 
-        # fig = plt.figure()
-        # ax = fig.add_subplot(projection='3d')
-        #
-        # # interpolator
-        # ax.plot_wireframe(X_dest, Y_dest, dest, rstride=3, cstride=3,
-        #                   alpha=0.4, color='m', label='linear interp')
-        #
-        # # ground truth
-        # ax.plot_wireframe(X, Y, source, rstride=3, cstride=3,
-        #                   alpha=0.4, label='ground truth')
-        # plt.legend()
-        # plt.show()
+        factor = dest.shape[0] / source.shape[0] #factor of increase in number of cells
+        dest /= factor #assuming *extensive* measurements (e.g. counts): compensate for increase in resolution
+
         return (dest)
 
     ########
