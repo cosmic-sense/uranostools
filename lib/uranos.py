@@ -128,10 +128,10 @@ class URANOS:
             print("No config-files found in "+ folder + ". Some calculations may fail.")
             return
 
+        ff = files[0]
         if (len(files) > 1):
             print("Multiple config-files found in " + folder+", using only "+ ff)
 
-        ff = files[0]
         tt = open(ff)
         tmpl2 = tt.readlines()
         tt.close()
@@ -156,7 +156,8 @@ class URANOS:
     #######
     def condense_runs(self, folder, dest_dir, pattern=None):
         """
-        Read matrix outputs from multiple (parallel) runs from a folder and condense to single file, where possible
+        Read matrix outputs from multiple (parallel) runs from <folder> and condense to single file, where possible.
+        Not-(yet)-condensable files are maintained and copied to <dest_dir>.
 
         Parameters
         ----------
@@ -165,7 +166,7 @@ class URANOS:
         dest_dir : string
            path to folder where condensed files are created
         pattern : string
-            regular expression for selecting only a subset of the files. Case sensitive.
+            optional regular expression for selecting only a subset of the files. Case sensitive.
 
         Returns
         -------
@@ -192,9 +193,10 @@ class URANOS:
                 rx = re.compile(pattern)
             except:
                 print("'pattern' must be a valid regular expression.")
-                return
-        files = [stri for stri in files if
-                 re.search(pattern=rx, string=stri) is not None]  # only use files matching specified pattern
+                return()
+
+            files = [stri for stri in files if
+                     re.search(pattern=rx, string=stri) is not None]  # only use files matching specified pattern
 
         date_ptrn = "\d{8}-\d{4}"
         rx = re.compile(".*(" + date_ptrn + ").*")
@@ -203,7 +205,7 @@ class URANOS:
         files = np.array(files)
         if len(files)==0:
             print("No (valid) files found, nothing done.")
-            return
+            return()
 
         # extract dates from filenames
         dates = [re.sub(pattern=rx, repl='\\1', string=stri) for stri in files]
@@ -1044,8 +1046,11 @@ class URANOS:
             regions = np.unique(self.Regions)
 
         if annotate is None:
-            annotate = image
-            
+            if  hasattr(self, 'region_data') and (image in U.region_data.keys()):
+                annotate = image
+            else:
+                annotate = "none"
+
         try:
             Var = getattr(self, image)
         except:
@@ -1055,11 +1060,12 @@ class URANOS:
             fig, ax = plt.subplots(figsize=(5,5))
         
         if title is None:
+            title = ""
             if image in self.variable_labels.keys():
-                title = 'Map of %s' % self.variable_labels[image]
-            if annotate != image and annotate in self.variable_labels:
+                title += 'Map of %s' % self.variable_labels[image]
+            if (annotate != image) and (annotate in self.variable_labels):
                 title += '\nAnnotation: %s' % self.variable_labels[annotate]
-            if overlay=='Origins':   title += '\nOverlay: sim. Neutron Origins (x)'
+            if overlay == 'Origins':   title += '\nOverlay: sim. Neutron Origins (x)'
             if not x_marker is None: title += '\n\n'
         else:
             title = title
@@ -1112,12 +1118,13 @@ class URANOS:
                     ax.annotate('{0:{1}}\n$\pm${2:{3}}'.format(dataset['Origins'], fmt, dataset['Origins_err'], fmt_err),
                         coords, fontsize=fontsize, ha='center', va='center')
                 else:
-                    if (fmt=="%s"):  #generic formatting for all remaining cases
-                        ax.annotate('{}'.format(dataset[annotate], fmt),
-                                    coords, fontsize=fontsize, ha='center', va='center')
-                    else:
-                        ax.annotate('{0:{1}}'.format(dataset[annotate], fmt),
-                                    coords, fontsize=fontsize, ha='center', va='center')
+                    if annotate != "none":
+                        if (fmt=="%s"):  #generic formatting for all remaining cases
+                            ax.annotate('{}'.format(dataset[annotate], fmt),
+                                        coords, fontsize=fontsize, ha='center', va='center')
+                        else:
+                            ax.annotate('{0:{1}}'.format(dataset[annotate], fmt),
+                                        coords, fontsize=fontsize, ha='center', va='center')
 
         #plt.title(r'$\theta_1=5\,\%$, $\theta_2=10\,\%$, $R=200\,$m')
         # Tick format in meters
