@@ -222,8 +222,9 @@ class URANOS:
         # mode of aggregation
         append_group = ['AlbedoNeutronLayerDistances_']  # files to be aggregated by appending
         add_group    = [str for str in dest_file_groups if "Map" in str]  # files to be aggregated by adding up
-        copy_group   = ['liveViewGraphs_', 'uranosRawHistos_']  # files to be ignored / cannot be aggregated. Files will just be copied
-        special_group = ['Uranos_']  # files to be treasted specially
+        special_group = ['Uranos_']  # files to be treated specially
+        #copy_group   = ['liveViewGraphs_', 'uranosRawHistos_','rawHistosURANOS_']  # files to be ignored / cannot be aggregated. Files will just be copied
+        copy_group = np.setdiff1d(dest_file_groups, append_group + add_group + special_group) #all remaining
 
         from datetime import datetime
         suffix = datetime.today().strftime('%Y%m%d-%H%M')  # suffix for newly generated files
@@ -261,6 +262,8 @@ class URANOS:
                 M_aggr = None
                 for ff in list(files_set):
                     self = self.read_inputmatrix(filename=ff, target="temp", silent=True)
+                    if self.temp is None: #there was an error reading the file, skip
+                        continue
                     if M_aggr is None:
                         M_aggr = self.temp  # use the first matrix read as start
                     else:
@@ -284,7 +287,7 @@ class URANOS:
                 tt.close()
                 not_equal = [] #collect names of cfg files that differ from first one
                 nneutrons = 0 #for summing up number of neutrons
-                ignore_lines = np.array([5, 8]) #lines to be irgnored in comparison fo config files
+                ignore_lines = np.array([5, 8, 87]) #lines to be ignored in comparison fo config files
                 for ff in files_set:
                     tt = open(ff)
                     tmpl2 = tt.readlines()
@@ -397,7 +400,18 @@ class URANOS:
             I = self.convert_rgb2grey(I)
             A = np.array(I)
         else: #import "dat"
-            A = np.loadtxt(filename_w_path, dtype="int")
+            try:
+                A = np.loadtxt(filename_w_path, dtype="int")
+            except Exception as e:
+                print("With file "+filename+":")
+                # Just print(e) is cleaner and more likely what you want,
+                # but if you insist on printing message specifically whenever possible...
+                if hasattr(e, 'message'):
+                    print(e.message)
+                else:
+                    print(e)
+                setattr(self, target, None)
+                return(self)
 
         setattr(self, target, A)  #save imported matrix as attribute
         #self.Materials = A
