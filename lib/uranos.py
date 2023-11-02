@@ -178,7 +178,7 @@ class URANOS:
         All files containing "Map" in their name are aggregated by summing up.
         'AlbedoNeutronLayerDistances_*' are aggregated by appending to each other.
         'Uranos_*.cfg' are aggregated by summing up the number of simulated neutrons.
-        All other files are copied.
+        All other files with a date string ("YYYYmmdd-HHMM") and UranosGeometryConfig.dat are copied.
 
         Example
         -------
@@ -194,7 +194,6 @@ class URANOS:
             except:
                 print("'pattern' must be a valid regular expression.")
                 return()
-
             files = [stri for stri in files if
                      re.search(pattern=rx, string=stri) is not None]  # only use files matching specified pattern
 
@@ -206,6 +205,8 @@ class URANOS:
         if len(files)==0:
             print("No (valid) files found, nothing done.")
             return()
+
+        files = np.concatenate((files, [folder + 'UranosGeometryConfig.dat'])) #add "UranosGeometryConfig.dat"
 
         # extract dates from filenames
         dates = [re.sub(pattern=rx, repl='\\1', string=stri) for stri in files]
@@ -219,12 +220,13 @@ class URANOS:
 
         dest_file_groups = np.unique(dest_files)  # the "groups" of files to be aggregated (e.g. "densityMapSelected_", "DensityTrackMapThermalNeutron", etc.)
 
-        # mode of aggregation
+        # define mode of aggregation for different files
         append_group = ['AlbedoNeutronLayerDistances_']  # files to be aggregated by appending
         add_group    = [str for str in dest_file_groups if "Map" in str]  # files to be aggregated by adding up
         special_group = ['Uranos_']  # files to be treated specially
-        #copy_group   = ['liveViewGraphs_', 'uranosRawHistos_','rawHistosURANOS_']  # files to be ignored / cannot be aggregated. Files will just be copied
+        # files which cannot be aggregated and will just be copied
         copy_group = np.setdiff1d(dest_file_groups, append_group + add_group + special_group) #all remaining
+
 
         from datetime import datetime
         suffix = datetime.today().strftime('%Y%m%d-%H%M')  # suffix for newly generated files
