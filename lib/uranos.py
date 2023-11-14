@@ -154,7 +154,7 @@ class URANOS:
     #######
     # Input
     #######
-    def condense_runs(self, folder, dest_dir, pattern=None):
+    def condense_runs(self, folder, dest_dir, pattern=None, include_matrixfiles=False):
         """
         Read matrix outputs from multiple (parallel) runs from <folder> and condense to single file, where possible.
         Not-(yet)-condensable files are maintained and copied to <dest_dir>.
@@ -167,6 +167,8 @@ class URANOS:
            path to folder where condensed files are created
         pattern : string
             optional regular expression for selecting only a subset of the files. Case sensitive.
+        include_matrixfiles : bool, default: False
+            also copy URANOS matrix input files (*.dat, *.png)
 
         Returns
         -------
@@ -186,7 +188,7 @@ class URANOS:
 
         """
         import glob
-        files = glob.glob(folder + "*.*")
+        allfiles = glob.glob(folder + "*.*")
         import re
         if pattern is not None:
             try:
@@ -194,19 +196,38 @@ class URANOS:
             except:
                 print("'pattern' must be a valid regular expression.")
                 return()
-            files = [stri for stri in files if
+            files = [stri for stri in allfiles if
                      re.search(pattern=rx, string=stri) is not None]  # only use files matching specified pattern
 
-        date_ptrn = "\d{8}-\d{4}"
+        #date_ptrn = "\d{8}-\d{4}|(\d+.\.(dat|png|DAT|PNG))"
+        #date_ptrn = "\\d{8}-\\d{4}|(\\d+.\.(dat|png|DAT|PNG))"
+        #select only those containing a date
+        date_ptrn = "\\d{8}-\\d{4}"
+
         rx = re.compile(".*(" + date_ptrn + ").*")
-        files = [stri for stri in files if
+        files = [stri for stri in allfiles if
                  re.search(pattern=rx, string=stri) is not None]  # only use files with date in name
         files = np.array(files)
+
+        if include_matrixfiles:
+            #add files containing matrix input data (png or dat files)
+            mat_ptrn = "((^|/|\\\\)\\d+.\\.(dat|png|DAT|PNG))"
+            rx = re.compile(".*(" + mat_ptrn + ").*")
+            matfiles = [stri for stri in allfiles if
+                     re.search(pattern=rx, string=stri) is not None]  # only use files with date in name
+            files = np.concatenate((files, matfiles))
+
+        if pattern is None:
+            #add the Uranos.cfg, if existing
+            cfg_file = glob.glob(folder + "Uranos.cfg")
+            files = np.concatenate((files,  cfg_file))
+
         if len(files)==0:
             print("No (valid) files found, nothing done.")
             return()
 
-        files = np.concatenate((files, [folder + 'UranosGeometryConfig.dat'])) #add "UranosGeometryConfig.dat"
+
+        #files = np.concatenate((files, [folder + 'UranosGeometryConfig.dat'])) #add "UranosGeometryConfig.dat"
 
         # extract dates from filenames
         dates = [re.sub(pattern=rx, repl='\\1', string=stri) for stri in files]
@@ -374,7 +395,7 @@ class URANOS:
             if len(filename) == 0:  # search for "dat"
                 filename = glob.glob(pathname + layer + suffix + ".dat")
             if len(filename) == 0:  # nothing found
-                print("Error: Couldn't find any match for {}.".format(pathname+layer+suffix))
+                print("Error: Couldn't find any file matching {}.".format(pathname+layer+suffix))
                 return (self)
             filename = filename[0]
             filename_w_path = filename
