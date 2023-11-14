@@ -136,10 +136,30 @@ class URANOS:
         tmpl2 = tt.readlines()
         tt.close()
 
-
+        #these may become obsolete, if we switch to the notation below
         self.n_sim_neutrons  = self._extract_value_from_cfg(filecont=tmpl2, line=5, ff=ff, vtype=int) # number of simulated neutrons
         self.hum             = self._extract_value_from_cfg(filecont=tmpl2, line=17, ff=ff, vtype=float) # Air humidity [g/m3]
         self.dimension       = self._extract_value_from_cfg(filecont=tmpl2, line=6, ff=ff, vtype=float) #Dimension [mm]
+
+        #import som geometry information from UranosGeometryConfig.dat
+        files = glob.glob(folder + "UranosGeometryConfig.dat")
+
+        if (len(files) == 0):
+            print("No UranosGeometryConfig.dat found in " + folder + ". Some calculations may fail.")
+            return
+
+        tt = open(ff)
+        tmpl2 = tt.readlines()
+        tt.close()
+        #construct empty class for better organization of values
+        class cfg:
+            pass
+
+        self.cfg=cfg()
+        self.cfg.n_sim_neutrons = self._extract_value_from_cfg(filecont=tmpl2, line=0, ff=ff, vtype=int)  # neutron generation layer
+        self.cfg.n_sim_neutrons = self._extract_value_from_cfg(filecont=tmpl2, line=1, ff=ff, vtype=int)  # detector layer
+        self.cfg.n_sim_neutrons = self._extract_value_from_cfg(filecont=tmpl2, line=2, ff=ff, vtype=int)  # first ground layer
+
 
     def _extract_value_from_cfg(self, filecont, line, ff="[]", vtype=float):
         # internal function: extract a numeric value from a specified line of the content of a cfg-file with checking
@@ -187,6 +207,12 @@ class URANOS:
         U.condense_runs(folder=U.folder, dest_dir="./condensed_output", pattern="Cherrypicking")
 
         """
+
+        import os
+        if not os.path.exists(folder):
+            print(folder + " not found, nothing done.")
+            return()
+
         import glob
         allfiles = glob.glob(folder + "*.*")
         import re
@@ -219,8 +245,8 @@ class URANOS:
 
         if pattern is None:
             #add the Uranos.cfg, if existing
-            cfg_file = glob.glob(folder + "Uranos.cfg")
-            files = np.concatenate((files,  cfg_file))
+            files = np.concatenate((files, glob.glob(folder + "Uranos.cfg"))) #include config file
+            files = np.concatenate((files, glob.glob(folder + "UranosGeometryConfig.dat"))) #include geometry file
 
         if len(files)==0:
             print("No (valid) files found, nothing done.")
@@ -252,7 +278,6 @@ class URANOS:
         from datetime import datetime
         suffix = datetime.today().strftime('%Y%m%d-%H%M')  # suffix for newly generated files
 
-        import os
         if not os.path.exists(dest_dir):
             os.makedirs(dest_dir)
         else:
