@@ -329,10 +329,13 @@ class URANOS:
                 if len(not_equal)>0:
                     print("Warning: Some Uranos_*.cfg differ from the first one read: "+ str(not_equal))
                 continue
-            f = open(dest_dir + "condense_log.txt", "a")
-            f.write('\n'+('\n'.join(dates)))
-            f.writelines("... condensed to *"+suffix+"*." )
-            f.close()
+
+        #write summary log
+        f = open(dest_dir + "condense_log.txt", "a")
+        f.write('\n'+('\n'.join(dates)))
+        f.writelines("... condensed to *"+suffix+"*." )
+        f.close()
+
         return
 
     def read_inputmatrix(self, layer=None, filename=None, target=None, scaling=None, silent=False):
