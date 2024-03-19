@@ -147,18 +147,25 @@ class URANOS:
         if (len(files) == 0):
             print("No UranosGeometryConfig.dat found in " + folder + ". Some calculations may fail.")
             return
+        ff = files[0]
 
         tt = open(ff)
         tmpl2 = tt.readlines()
         tt.close()
         #construct empty class for better organization of values
-        class cfg:
+        class cfg_class:
             pass
 
-        self.cfg=cfg()
-        self.cfg.n_sim_neutrons = self._extract_value_from_cfg(filecont=tmpl2, line=0, ff=ff, vtype=int)  # neutron generation layer
-        self.cfg.n_sim_neutrons = self._extract_value_from_cfg(filecont=tmpl2, line=1, ff=ff, vtype=int)  # detector layer
-        self.cfg.n_sim_neutrons = self._extract_value_from_cfg(filecont=tmpl2, line=2, ff=ff, vtype=int)  # first ground layer
+        cfg=dict()
+
+        cfg['source_layer'] = self._extract_value_from_cfg(filecont=tmpl2, line=0, ff=ff, vtype=int)  # neutron generation layer
+        cfg['detector_layer']   = self._extract_value_from_cfg(filecont=tmpl2, line=1, ff=ff, vtype=int)  # detector layer
+        cfg['ground_layer']     = self._extract_value_from_cfg(filecont=tmpl2, line=2, ff=ff, vtype=int)  # first ground layer
+
+        import pandas
+        cfg['geometry']  = pandas.read_csv(ff, sep="\t", skiprows=3, header=None) #import geometry
+
+        self.cfg = cfg    #safe as object attribute
 
 
     def _extract_value_from_cfg(self, filecont, line, ff="[]", vtype=float):
@@ -222,7 +229,7 @@ class URANOS:
             except:
                 print("'pattern' must be a valid regular expression.")
                 return()
-            files = [stri for stri in allfiles if
+            allfiles = [stri for stri in allfiles if
                      re.search(pattern=rx, string=stri) is not None]  # only use files matching specified pattern
 
         #date_ptrn = "\d{8}-\d{4}|(\d+.\.(dat|png|DAT|PNG))"
@@ -231,9 +238,10 @@ class URANOS:
         date_ptrn = "\\d{8}-\\d{4}"
 
         rx = re.compile(".*(" + date_ptrn + ").*")
-        files = [stri for stri in allfiles if
+        datefiles = [stri for stri in allfiles if
                  re.search(pattern=rx, string=stri) is not None]  # only use files with date in name
-        files = np.array(files)
+        datefiles = np.array(datefiles)
+        files = datefiles
 
         if include_matrixfiles:
             #add files containing matrix input data (png or dat files)
@@ -255,10 +263,11 @@ class URANOS:
 
         #files = np.concatenate((files, [folder + 'UranosGeometryConfig.dat'])) #add "UranosGeometryConfig.dat"
 
-        # extract dates from filenames
-        dates = [re.sub(pattern=rx, repl='\\1', string=stri) for stri in files]
-        dates = np.unique(dates)
-        print("Aggregating results from {} runs: {}".format(len(dates), dates))
+        # extract threads from filenames
+        rx = re.compile(".*(" + date_ptrn + "[^\\.]*).*")
+        threads = [re.sub(pattern=rx, repl='\\1', string=stri) for stri in datefiles]
+        threads = np.unique(threads)
+        print("Aggregating results from {} threads: {}  -  {}".format(len(threads), threads[0],  threads[-2:-1], ))
 
         dest_files = [re.sub(pattern=r"(.*)_*" + date_ptrn + ".*", repl='\\1', string=stri) for stri in
                       files]  # extract part before the date string
@@ -286,8 +295,8 @@ class URANOS:
         from shutil import copy2
 
         for file_group in dest_file_groups:
-            print("...aggregating "+file_group)
             files_set = files[dest_files == file_group]  # select files belonging to current class
+            print("...aggregating "+file_group+"* (", str(len(files_set)), " files) ")
             file_ext = re.sub(pattern=r".*(\..*)$", repl="\\1", string=files_set[0])  # get file extension
 
             if (file_group in copy_group):  # do not aggregate, just copy files
@@ -357,8 +366,8 @@ class URANOS:
 
         #write summary log
         f = open(dest_dir + "condense_log.txt", "a")
-        f.write('\n'+('\n'.join(dates)))
-        f.writelines("... condensed to *"+suffix+"*." )
+        f.write('\n'+('\n'.join(threads)))
+        f.writelines("... ("+ str(len(threads)) + " threads) condensed to *"+suffix+"*." )
         f.close()
 
         return
@@ -794,11 +803,11 @@ class URANOS:
                 grids = np.setdiff1d(grids, non_existing) #remove nonexisting grids from list
 
             if (not hasattr(self, "Materials")):
-                print("self.Material needs to be set first. Use 'U.read_inputmatrix()''")
+                print("self.Materials needs to be set first. Use 'U.read_inputmatrix()''")
                 return (self)
 
         if (not hasattr(self, "Materials")):
-            print("self.Material needs to be set first. Use 'U.read_inputmatrix()''")
+            print("self.Materials needs to be set first. Use 'U.read_inputmatrix()''")
             return (self)
 
         if (regions is None): #no new region specified
@@ -1059,7 +1068,7 @@ class URANOS:
         image: str, default:'SM',
         	name of the matrix used for colored plotting
         annotate: str, default None,
-            attempts to annotate regions with a label given by a column name in U.region_data
+            attempts to annotate regions with a label given by a column name in self.region_data
         overlay: defaults None
             overlay 'Origins' to draw crosses of neutron origins onto the map
         fontsize: int = 10
@@ -1111,9 +1120,13 @@ class URANOS:
             regions = np.unique(self.Regions)
 
         if annotate is None:
-            if  hasattr(self, 'region_data') and (image in U.region_data.keys()):
+            if  hasattr(self, 'region_data') and (image in self.region_data.keys()):
                 annotate = image
             else:
+                annotate = "none"
+        else:
+            if not annotate in self.region_data.columns:
+                print('Warning: Annotation column %s not found in self.region_data. Ignored.' % annotate)
                 annotate = "none"
 
         try:
