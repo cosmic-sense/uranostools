@@ -319,6 +319,7 @@ class URANOS:
                 M_aggr = None
                 for ff in list(files_set):
                     self = self.read_inputmatrix(filename=ff, target="temp", silent=True)
+                    #U = U.read_inputmatrix(filename=ff, target="temp", silent=True)
                     if self.temp is None: #there was an error reading the file, skip
                         continue
                     if M_aggr is None:
@@ -333,9 +334,13 @@ class URANOS:
                         self.temp = None  # discard read matrix
                 # write to file
                 import pandas as pd
-                df = pd.DataFrame(data=M_aggr)
-                df.to_csv(dest_dir + file_group + suffix + file_ext, sep='\t', header=False, float_format='%i', index=False)
+                if isinstance(np.ravel(M_aggr)[0], np.floating):
+                    float_format = '%.3f'
+                else:
+                    float_format = '%i'
 
+                df = pd.DataFrame(data=M_aggr)
+                df.to_csv(dest_dir + file_group + suffix + file_ext, sep='\t', header=False, float_format=float_format, index=False)
                 continue
 
             if (file_group in special_group):  # do something special (aggregate Uranos_*.cfg by summing up the simulated neutrons)
@@ -374,8 +379,8 @@ class URANOS:
 
     def read_inputmatrix(self, layer=None, filename=None, target=None, scaling=None, silent=False):
         """
-           Read input matrices ("material", "porosity", "density") from png or dat and
-           add them as attributes
+           Read URANOS input (e.g. "material", "porosity", "density") or output matrices (e.g."densityMapThermalNeutron_*")
+           from png, dat or csv and add them as attributes
            extends/replaces read_materials()
 
             Parameters
@@ -459,9 +464,36 @@ class URANOS:
             I = Image.open(filename_w_path)
             I = self.convert_rgb2grey(I)
             A = np.array(I)
-        else: #import "dat"
+        else: #import text files (dat, csv)
             try:
-                A = np.loadtxt(filename_w_path, dtype="int")
+                f = open(filename_w_path, "r")
+                firstline = f.readline() #read first line
+                f.close()
+
+                #determine column separator
+                if "\t" in firstline:
+                    sep = "\t"
+                if ";" in firstline:
+                    sep = ";"
+                if " " in firstline:
+                    sep = " "
+
+                # determine decimal separator
+                if "," in firstline:
+                    dec = ","
+                else:
+                    dec = "."
+
+                if dec==",":
+                    import pandas
+                    tt = pandas.read_table(filename_w_path, decimal=dec, header=None)
+                    A = tt.to_numpy()
+                else:
+                    A = np.loadtxt(filename_w_path, dtype="int")
+
+                if np.all(np.isnan(A[:,-1])): #drop empty trailing column
+                    A = A[:,0:-1]
+
             except Exception as e:
                 print("With file "+filename+":")
                 # Just print(e) is cleaner and more likely what you want,
@@ -1096,7 +1128,7 @@ class URANOS:
         colorbar: bool = False
             draw a colorbar
         axis_labels: bool = True
-            axis_labels=True - draw x and y axis labels: 'x (in m)'
+            axis_labels=True - draw x and y axis labels, e.g. 'x [m]'
         interpolation: str = 'none',
         	interpolation of the image, can be one of 'none', 'nearest', 'bilinear', 'bicubic', 'spline16', 'spline36', 'hanning', 'hamming', 'hermite', 'kaiser', 'quadric', 'catrom', 'gaussian', 'bessel', 'mitchell', 'sinc', 'lanczos'
 
@@ -1132,7 +1164,7 @@ class URANOS:
         try:
             Var = getattr(self, image)
         except:
-            print('Error: %s is no valid attribute.' % image)
+            print("Error: '%s' is no valid attribute." % image)
         
         if ax is None:
             fig, ax = plt.subplots(figsize=(5,5))
@@ -1253,8 +1285,8 @@ class URANOS:
             ax.add_patch(fpc)
 
         if axis_labels:
-            ax.set_xlabel('x (in m)')
-            ax.set_ylabel('y (in m)')
+            ax.set_xlabel('x [m]')
+            ax.set_ylabel('y [m]')
         
         return (ax)
 
