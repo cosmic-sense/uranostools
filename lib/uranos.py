@@ -181,7 +181,7 @@ class URANOS:
     #######
     # Input
     #######
-    def condense_runs(self, folder, dest_dir, pattern=None, include_matrixfiles=False):
+    def condense_runs(self, folder, dest_dir, pattern=None, include_matrixfiles=False, wipe=False):
         """
         Read matrix outputs from multiple (parallel) runs from <folder> and condense to single file, where possible.
         Not-(yet)-condensable files are maintained and copied to <dest_dir>.
@@ -196,6 +196,8 @@ class URANOS:
             optional regular expression for selecting only a subset of the files. Case sensitive.
         include_matrixfiles : bool, default: False
             also copy URANOS matrix input files (*.dat, *.png)
+        wipe : bool, default: False
+            if enabled, delete all older files in dest_dir matching the file pattern
 
         Returns
         -------
@@ -298,6 +300,11 @@ class URANOS:
             files_set = files[dest_files == file_group]  # select files belonging to current class
             print("...aggregating "+file_group+"* (", str(len(files_set)), " files) ")
             file_ext = re.sub(pattern=r".*(\..*)$", repl="\\1", string=files_set[0])  # get file extension
+
+            if wipe: #delete existing files
+                oldfiles = glob.glob(dest_dir + file_group+ "*.*")
+                for f in oldfiles:
+                    os.remove(f)
 
             if (file_group in copy_group):  # do not aggregate, just copy files
                 for ff in files_set:
