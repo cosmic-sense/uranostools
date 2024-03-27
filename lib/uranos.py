@@ -387,7 +387,7 @@ class URANOS:
     def read_inputmatrix(self, layer=None, filename=None, target=None, scaling=None, silent=False):
         """
            Read URANOS input (e.g. "material", "porosity", "density") or output matrices (e.g."densityMapThermalNeutron_*")
-           from png, dat or csv and add them as attributes
+           from png, tif, dat or csv and add them as attributes
            extends/replaces read_materials()
 
             Parameters
@@ -467,7 +467,11 @@ class URANOS:
                     else:
                         target = "material"
 
-        if "png" in filename: #import png
+        from os import path
+        tt, file_extension = path.splitext(filename_w_path) #extract file extension
+        file_extension = file_extension.lower()  #convert to lowercase
+
+        if file_extension in [".png",".tif", ".tiff"]: #import png or tiff
             I = Image.open(filename_w_path)
             I = self.convert_rgb2grey(I)
             A = np.array(I)
