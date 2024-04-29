@@ -122,7 +122,7 @@ class URANOS:
 
         #find and read config file
         import glob
-        files = glob.glob(folder + "Uranos_*.*")
+        files = glob.glob(folder + "Uranos*.cfg")
 
         if (len(files) == 0):
             print("No config-files found in "+ folder + ". Some calculations may fail.")
@@ -1011,6 +1011,7 @@ class URANOS:
     ##################
     
     def m2grd(self, m):
+    # convert meter to grid-coordinates
         g = m / self.scaling + self.center[0]
         if np.isscalar(g):
             return(int(np.round(g)))
@@ -1097,8 +1098,8 @@ class URANOS:
     ########
     
     def plot(self, ax=None, image='SM', annotate=None, overlay=None, fontsize=10, title=None, contour=False,
-             regions=None, extent=500, cmap='Greys', cmap_scale=2, x_marker=None, cross_alpha=0.5,
-             label_offset=(0,0), step_fraction=0.2, colorbar=False, axis_labels=True, interpolation='none'):
+             regions=None, extent=500, cmap='Greys', cmap_scale=2, norm=None, x_marker=None, cross_alpha=0.5,
+             label_offset=(0,0), step_fraction=0.2, ax_ticks = None, colorbar=False, axis_labels=True, interpolation='none'):
 
         """
         Plot map, annotate, and overlay
@@ -1128,6 +1129,8 @@ class URANOS:
             colorscale used for the image plot
         cmap_scale: int = 2
             scales the colorscale by factor 2, which is often lighter and increases readability for annotation labels.
+        norm: str or Normalize, default None
+            see argument "norm" for imshow()
         x_marker: float, default: none
             x-distance in meters to draw a marker on top of the axis, e.g., to highlight a distance of a patch from the center
         cross_alpha: float = 0.5
@@ -1136,6 +1139,10 @@ class URANOS:
             x and y offset of the labels to increase readibility over region contours
         step_fraction: float = 0.2
             x and y steps to use for tickmarks relative to the full extent.
+        # ax_ticks: list of two lists of float, default None
+        #     location of ticks on x- and y-axis
+        ax_ticks_offset:  float, default: -500
+            offset of ticks on x- and y-axis
         colorbar: bool = False
             draw a colorbar
         axis_labels: bool = True
@@ -1176,14 +1183,21 @@ class URANOS:
             Var = getattr(self, image)
         except:
             print("Error: '%s' is no valid attribute." % image)
-        
+        try:
+            labels = getattr(self, "variable_labels")
+            variable_label = labels[image]
+        except:
+            print("Error: '%s' has no label set in self.variable_labels[.]." % image)
+            variable_label = ""
+
+
         if ax is None:
             fig, ax = plt.subplots(figsize=(5,5))
         
         if title is None:
             title = ""
             if image in self.variable_labels.keys():
-                title += 'Map of %s' % self.variable_labels[image]
+                title += '%s' % self.variable_labels[image]
             if (annotate != image) and (annotate in self.variable_labels):
                 title += '\nAnnotation: %s' % self.variable_labels[annotate]
             if overlay == 'Origins':   title += '\nOverlay: sim. Neutron Origins (x)'
@@ -1199,14 +1213,14 @@ class URANOS:
             cmap = truncate_colormap(cmap, 0, 1/cmap_scale)
 
         
-        rasterimg = ax.imshow(Var, interpolation=interpolation, cmap=cmap) #, vmax=np.max(Var)*cmap_scale)
+        rasterimg = ax.imshow(Var, interpolation=interpolation, cmap=cmap, norm=norm) #, vmax=np.max(Var)*cmap_scale)
         if contour:
             ax.contour(self.Regions, levels=len(np.unique(self.Regions)), colors='k', linewidths=1, antialiased=True)
 
         if colorbar:
             cax = ax.figure.add_axes([ax.get_position().x1+0.01,ax.get_position().y0,0.02,ax.get_position().height])
             mycbar = ax.figure.colorbar(rasterimg, cax=cax)
-            mycbar.ax.set_ylabel(self.variable_labels[image], rotation=-90, va="bottom")
+            mycbar.ax.set_ylabel(variable_label, rotation=-90, va="bottom")
             mycbar.ax.set_yticklabels(['{0:{1}}'.format(y, self.variable_formats[image]) for y in mycbar.get_ticks()])
             #mycbar.ax.set_yticklabels(['{0:.0f}'.format(y) for y in mycbar.get_ticks()])
 
@@ -1250,9 +1264,14 @@ class URANOS:
         #plt.title(r'$\theta_1=5\,\%$, $\theta_2=10\,\%$, $R=200\,$m')
         # Tick format in meters
         grid100 = np.arange(-extent*(1-step_fraction), extent*(1-step_fraction)+1, extent*step_fraction)
-        ax.set_xticks(self.m2grd(grid100), ['%.0f' % x for x in grid100])
-        ax.set_yticks(self.m2grd(grid100), ['%.0f' % x for x in grid100[::-1]])
-        # Zoom to extend
+        #grid100 = np.arange(-extent*(1-step_fraction), extent*(1-step_fraction)+1, extent*step_fraction) +500 + ax_ticks_offset
+        if ax_ticks is None:
+            ax.set_xticks(self.m2grd(grid100), ['%.0f' % x for x in grid100] )
+            ax.set_yticks(self.m2grd(grid100), ['%.0f' % x for x in grid100[::-1]])
+        else:
+            ax.set_xticks(ax_ticks["xticks"], ax_ticks["xticklabels"])
+            ax.set_yticks(ax_ticks["yticks"], ax_ticks["yticklabels"])
+        # Zoom to extent
         ax.set_xlim(self.m2grd(grid100-extent*step_fraction).min(), self.m2grd(grid100+extent*step_fraction).max())
         ax.set_ylim(self.m2grd(grid100+extent*step_fraction).max(), self.m2grd(grid100-extent*step_fraction).min())
         # Tick markers inside
