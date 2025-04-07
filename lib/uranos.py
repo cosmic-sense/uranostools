@@ -7,6 +7,7 @@ CoRNy URANOS
 
 import os
 import numpy as np
+import pandas as pd
 from PIL import Image
 from scipy.ndimage.measurements import label as scipy_img_label
 import pandas
@@ -164,6 +165,7 @@ class URANOS:
 
         import pandas
         cfg['geometry']  = pandas.read_csv(ff, sep="\t", skiprows=3, header=None) #import geometry
+        cfg['geometry'].columns = ["upper_bound", "thickness", "layer_code"]
 
         self.cfg = cfg    #safe as object attribute
 
