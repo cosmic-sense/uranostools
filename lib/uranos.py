@@ -4,7 +4,7 @@ CoRNy URANOS
     based on: https://git.ufz.de/CRNS/cornish_pasdy/-/blob/master/corny/uranos.py
     version: 1.01
 """
-
+from neatlogger import log
 import os
 import numpy as np
 import pandas as pd
@@ -13,6 +13,7 @@ from scipy.ndimage.measurements import label as scipy_img_label
 import pandas
 from glob import glob
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 # Additional packages will be imported locally when needed:
 #   from .Schroen2017hess import get_footprint, Wr, Wr_approx
@@ -184,6 +185,211 @@ class URANOS:
     # Input
     #######
     def condense_runs(self, folder, dest_dir, pattern=None, include_matrixfiles=False, wipe=False):
+        """
+        Read matrix outputs from multiple (parallel) runs from <folder> and condense to single file, where possible.
+        Not-(yet)-condensable files are maintained and copied to <dest_dir>.
+
+        Parameters
+        ----------
+        folder : string
+           path to folder containing multirun-files
+        dest_dir : string
+           path to folder where condensed files are created
+        pattern : string
+            optional regular expression for selecting only a subset of the files. Case sensitive.
+        include_matrixfiles : bool, default: False
+            also copy URANOS matrix input files (*.dat, *.png)
+        wipe : bool, default: False
+            if enabled, delete all older files in dest_dir matching the file pattern
+
+        Returns
+        -------
+        None
+        [side effect: condensed output files in 'dest_dir']
+
+        Remarks
+        -------
+        All files containing "Map" in their name are aggregated by summing up.
+        'AlbedoNeutronLayerDistances_*' are aggregated by appending to each other.
+        'Uranos_*.cfg' are aggregated by summing up the number of simulated neutrons.
+        All other files with a date string ("YYYYmmdd-HHMM") and UranosGeometryConfig.dat are copied.
+
+        Example
+        -------
+        U.condense_runs(folder=U.folder, dest_dir="./condensed_output", pattern="Cherrypicking")
+
+        """
+
+        import os
+        if not os.path.exists(folder):
+            print(folder + " not found, nothing done.")
+            return()
+
+        import glob
+        allfiles = glob.glob(folder + "*.*")
+        import re
+        if pattern is not None:
+            try:
+                rx = re.compile(pattern)
+            except:
+                print("'pattern' must be a valid regular expression.")
+                return()
+            allfiles = [stri for stri in allfiles if
+                     re.search(pattern=rx, string=stri) is not None]  # only use files matching specified pattern
+
+        #date_ptrn = "\d{8}-\d{4}|(\d+.\.(dat|png|DAT|PNG))"
+        #date_ptrn = "\\d{8}-\\d{4}|(\\d+.\.(dat|png|DAT|PNG))"
+        #select only those containing a date
+        date_ptrn = "\\d{8}-\\d{4}"
+
+        rx = re.compile(".*(" + date_ptrn + ").*")
+        datefiles = [stri for stri in allfiles if
+                 re.search(pattern=rx, string=stri) is not None]  # only use files with date in name
+        datefiles = np.array(datefiles)
+        files = datefiles
+
+        if include_matrixfiles:
+            #add files containing matrix input data (png or dat files)
+            mat_ptrn = "((^|/|\\\\)\\d+.\\.(dat|png|DAT|PNG))"
+            rx = re.compile(".*(" + mat_ptrn + ").*")
+            matfiles = [stri for stri in allfiles if
+                     re.search(pattern=rx, string=stri) is not None]  # only use files with date in name
+            files = np.concatenate((files, matfiles))
+
+        if pattern is None:
+            #add the Uranos.cfg, if existing
+            files = np.concatenate((files, glob.glob(folder + "Uranos.cfg"))) #include config file
+            files = np.concatenate((files, glob.glob(folder + "UranosGeometryConfig.dat"))) #include geometry file
+
+        if len(files)==0:
+            print("No (valid) files found, nothing done.")
+            return()
+
+
+        #files = np.concatenate((files, [folder + 'UranosGeometryConfig.dat'])) #add "UranosGeometryConfig.dat"
+
+        # extract threads from filenames
+        rx = re.compile(".*(" + date_ptrn + "[^\\.]*).*")
+        threads = [re.sub(pattern=rx, repl='\\1', string=stri) for stri in datefiles]
+        threads = np.unique(threads)
+        log.progress("Aggregating results from {} threads: {}  -  {}".format(len(threads), threads[0],  threads[-2:-1], ))
+
+        dest_files = [re.sub(pattern=r"(.*)_*" + date_ptrn + ".*", repl='\\1', string=stri) for stri in
+                      files]  # extract part before the date string
+        dest_files = [re.sub(pattern=r".*[/\\]", repl='', string=stri) for stri in dest_files]  # discard any paths
+        dest_files = np.array(dest_files)
+
+        dest_file_groups = np.unique(dest_files)  # the "groups" of files to be aggregated (e.g. "densityMapSelected_", "DensityTrackMapThermalNeutron", etc.)
+
+        # define mode of aggregation for different files
+        append_group = ['AlbedoNeutronLayerDistances_']  # files to be aggregated by appending
+        add_group    = [str for str in dest_file_groups if "Map" in str]  # files to be aggregated by adding up
+        special_group = ['Uranos_']  # files to be treated specially
+        # files which cannot be aggregated and will just be copied
+        copy_group = np.setdiff1d(dest_file_groups, append_group + add_group + special_group) #all remaining
+
+
+        from datetime import datetime
+        suffix = datetime.today().strftime('%Y%m%d-%H%M')  # suffix for newly generated files
+
+        import os
+        if not os.path.exists(dest_dir):
+            os.makedirs(dest_dir)
+        else:
+            log.warning("Warning: 'dest_dir' exists, overwriting files...")
+
+        from shutil import copy2
+
+        for file_group in tqdm(dest_file_groups, desc=" | File groups"):
+            files_set = files[dest_files == file_group]  # select files belonging to current class
+            print("...aggregating "+file_group+"* (", str(len(files_set)), " files) ")
+            file_ext = re.sub(pattern=r".*(\..*)$", repl="\\1", string=files_set[0])  # get file extension
+
+            if wipe: #delete existing files
+                oldfiles = glob.glob(dest_dir + file_group+ "*.*")
+                for f in oldfiles:
+                    os.remove(f)
+
+            if (file_group in copy_group):  # do not aggregate, just copy files
+                for ff in files_set:
+                    copy2(src=ff, dst=dest_dir)
+                continue
+
+            if (file_group in append_group):  # aggregate by appending files
+                f = open(dest_dir + file_group + suffix + file_ext, "w")
+                from_line = 0  # read the first line only in the first file
+                for ff in list(files_set):
+                    tt = open(ff)
+                    f.writelines(tt.readlines()[from_line:])
+                    from_line = 1  # read the first line only in the first file, in the others, skip header
+                    tt.close()
+                f.close()
+                continue
+
+            if (file_group in add_group):  # aggregate by summing up matrices
+                M_aggr = None
+                for ff in list(files_set):
+                    self = self.read_inputmatrix(filename=ff, target="temp", silent=True)
+                    #U = U.read_inputmatrix(filename=ff, target="temp", silent=True)
+                    if self.temp is None: #there was an error reading the file, skip
+                        continue
+                    if M_aggr is None:
+                        M_aggr = self.temp  # use the first matrix read as start
+                    else:
+                        if M_aggr.shape != self.temp.shape:
+                            log.error("{} has different dimensions {} than other matrices {}, terminated.".format(ff,
+                                                                                                              M_aggr.shape,
+                                                                                                              self.temp.shape))
+                            return
+                        M_aggr += self.temp  # sum up
+                        self.temp = None  # discard read matrix
+                # write to file
+                import pandas as pd
+                if isinstance(np.ravel(M_aggr)[0], np.floating):
+                    float_format = '%.3f'
+                else:
+                    float_format = '%i'
+
+                df = pd.DataFrame(data=M_aggr)
+                output_file = dest_dir + file_group + suffix + file_ext
+                df.to_csv(output_file, sep='\t', header=False, float_format='%i', index=False)
+                tqdm.write(" < Saved %s" % output_file)
+
+                continue
+            if (file_group in special_group):  # do something special (aggregate Uranos_*.cfg by summing up the simulated neutrons)
+                tt = open(files_set[0])
+                tmpl = tt.readlines()
+                tt.close()
+                not_equal = [] #collect names of cfg files that differ from first one
+                nneutrons = 0 #for summing up number of neutrons
+                ignore_lines = np.array([5, 8, 87]) #lines to be ignored in comparison fo config files
+                for ff in files_set:
+                    tt = open(ff)
+                    tmpl2 = tt.readlines()
+                    if len(tmpl) != len(tmpl2) or not np.all(np.delete(tmpl, ignore_lines) == np.delete(tmpl2, ignore_lines)): #this file is different from the first
+                        not_equal = np.append(not_equal, ff)
+                    tt.close()
+
+                    n = self._extract_value_from_cfg(filecont=tmpl2, line=5, ff=ff, vtype=int)
+
+                    nneutrons += n
+                #generate summary file
+                tmpl[5] = re.sub(pattern="[^\\t]*", repl=str(nneutrons), string=tmpl[5], count=1) #add sum of simulated neutrons
+                tt = open(dest_dir + file_group + suffix + file_ext, "w")
+                tt.writelines(tmpl)
+                tt.close()
+                if len(not_equal)>0:
+                    print("Warning: Some Uranos_*.cfg differ from the first one read: "+ str(not_equal))
+                continue
+
+        #write summary log
+        f = open(dest_dir + "condense_log.txt", "a")
+        f.write('\n'+('\n'.join(threads)))
+        f.writelines("... ("+ str(len(threads)) + " threads) condensed to *"+suffix+"*." )
+        f.close()
+        tqdm.write(" < Saved %s" % (dest_dir + "condense_log.txt"))
+        return
+
         """
         Read matrix outputs from multiple (parallel) runs from <folder> and condense to single file, where possible.
         Not-(yet)-condensable files are maintained and copied to <dest_dir>.
