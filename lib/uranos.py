@@ -14,6 +14,7 @@ import pandas
 from glob import glob
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import hashlib
 
 # Additional packages will be imported locally when needed:
 #   from .Schroen2017hess import get_footprint, Wr, Wr_approx
@@ -184,6 +185,46 @@ class URANOS:
     #######
     # Input
     #######
+    def count_distinct_and_duplicate_files(self, file_paths):
+        """
+        Count distinct and duplicate files based on their content hashes.
+
+        Args:
+            file_paths (list): List of file paths to be analyzed.
+
+        Returns:
+            tuple: A tuple containing the count of distinct files,
+                   the count of duplicate files, and the list of distinct file paths.
+        """
+        hash_map = {}
+        distinct_indices = []
+
+        # Calculate hashes and categorize files
+        for index, file_path in enumerate(file_paths):
+            file_hash = self.calculate_hash(file_path)
+            if file_hash in hash_map:
+                hash_map[file_hash].append(index)
+            else:
+                hash_map[file_hash] = [index]
+
+            # Determine counts and indices
+        for indices in hash_map.values():
+            # Add the index of the first occurrence for each hash (unique file)
+            distinct_indices.append(indices[0])
+
+        distinct_count = len(distinct_indices)
+        duplicate_count = sum(len(indices) - 1 for indices in hash_map.values() if len(indices) > 1)
+
+        return distinct_count, duplicate_count, distinct_indices
+
+    def calculate_hash(self, file_path, hash_function=hashlib.sha256):
+        """Calculate the hash of the file using the specified hash function."""
+        hash_obj = hash_function()
+        with open(file_path, 'rb') as f:
+            while chunk := f.read(8192):
+                hash_obj.update(chunk)
+        return hash_obj.hexdigest()
+
     def condense_runs(self, folder, dest_dir, pattern=None, include_matrixfiles=False, wipe=False):
         """
         Read matrix outputs from multiple (parallel) runs from <folder> and condense to single file, where possible.
@@ -305,6 +346,14 @@ class URANOS:
             print("...aggregating "+file_group+"* (", str(len(files_set)), " files) ")
             file_ext = re.sub(pattern=r".*(\..*)$", repl="\\1", string=files_set[0])  # get file extension
 
+            if not file_group in special_group:
+                #check for duplicates
+                (n_unique, n_dups, ix_unique) = self.count_distinct_and_duplicate_files(files_set)
+                if n_dups > 0:
+                    log.warning("{} duplicate(s) found, using only the remaining {} file(s).".format(n_dups,
+                                                                                                 n_unique))
+                    files_set = files_set[ix_unique]  # use only the unique files
+
             if wipe: #delete existing files
                 oldfiles = glob.glob(dest_dir + file_group+ "*.*")
                 for f in oldfiles:
@@ -357,12 +406,13 @@ class URANOS:
 
                 continue
             if (file_group in special_group):  # do something special (aggregate Uranos_*.cfg by summing up the simulated neutrons)
+                files_set = files_set[ix_unique]  # use only the unique files as identified in previous group
                 tt = open(files_set[0])
                 tmpl = tt.readlines()
                 tt.close()
                 not_equal = [] #collect names of cfg files that differ from first one
                 nneutrons = 0 #for summing up number of neutrons
-                ignore_lines = np.array([5, 8, 87]) #lines to be ignored in comparison fo config files
+                ignore_lines = np.array([5, 8, 87]) #lines to be ignored in comparison of config files
                 for ff in files_set:
                     tt = open(ff)
                     tmpl2 = tt.readlines()
