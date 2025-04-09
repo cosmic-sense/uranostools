@@ -321,6 +321,24 @@ class URANOS:
         dest_files = np.array(dest_files)
 
         dest_file_groups = np.unique(dest_files)  # the "groups" of files to be aggregated (e.g. "densityMapSelected_", "DensityTrackMapThermalNeutron", etc.)
+        #ensure that at least one file with "density" in its name is treated before the entry "Uranos_" in dest_file_groups
+        #find an entry beginning with "density" and one beginning with "Uranos_"
+        index_uranos = np.where(dest_file_groups == "Uranos_")[0]
+        index_density = np.where([str.startswith("density") for str in dest_file_groups])[0]
+        if len(index_density) > 0 and len(index_uranos) > 0:
+            #there is at least one of each
+            density_ix = index_density[0]
+            uranos_ix = index_uranos[0]
+            #check their order
+            if density_ix > uranos_ix:
+                #swap them
+                dest_file_groups[density_ix], dest_file_groups[uranos_ix] = dest_file_groups[uranos_ix], dest_file_groups[density_ix]
+
+        if "density" in dest_file_groups and "Uranos_" in dest_file_groups:
+            density_ix = np.where(dest_file_groups == "density")[0][0]
+            uranos_ix = np.where(dest_file_groups == "Uranos_")[0][0]
+            if density_ix > uranos_ix:
+                dest_file_groups[density_ix], dest_file_groups[uranos_ix] = dest_file_groups[uranos_ix], dest_file_groups[density_ix]
 
         # define mode of aggregation for different files
         append_group = ['AlbedoNeutronLayerDistances_']  # files to be aggregated by appending
