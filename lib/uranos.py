@@ -359,8 +359,11 @@ class URANOS:
 
         from shutil import copy2
 
+        ix_unique = None
+
         for file_group in tqdm(dest_file_groups, desc=" | File groups"):
             files_set = files[dest_files == file_group]  # select files belonging to current class
+            #files_set = np.sort(files_set)  # sort files by name
             print("...aggregating "+file_group+"* (", str(len(files_set)), " files) ")
             file_ext = re.sub(pattern=r".*(\..*)$", repl="\\1", string=files_set[0])  # get file extension
 
@@ -424,13 +427,14 @@ class URANOS:
 
                 continue
             if (file_group in special_group):  # do something special (aggregate Uranos_*.cfg by summing up the simulated neutrons)
-                files_set = files_set[ix_unique]  # use only the unique files as identified in previous group
+                if ix_unique is not None:
+                    files_set = files_set[ix_unique]  # use only the unique files as identified in previous group
                 tt = open(files_set[0])
                 tmpl = tt.readlines()
                 tt.close()
                 not_equal = [] #collect names of cfg files that differ from first one
                 nneutrons = 0 #for summing up number of neutrons
-                ignore_lines = np.array([5, 8, 87]) #lines to be ignored in comparison of config files
+                ignore_lines = np.array([5, 8, 87,90]) #lines to be ignored in comparison of config files
                 for ff in files_set:
                     tt = open(ff)
                     tmpl2 = tt.readlines()
